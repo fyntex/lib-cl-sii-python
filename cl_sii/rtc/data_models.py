@@ -13,18 +13,25 @@ Each transaction can be uniquely identified by the group of fields defined in
 implementations, there are several information sources *where the "cesión"'s
 sequence number is not available*. Thus the usefulness of that class is
 limited, unlike :class:`cl_sii.dte.data_models.DteNaturalKey` for a DTE.
-
+In some cases, the alternative natural key :class:`CesionAltNaturalKey` may
+be used as a workaround when the sequence number is not available.
 """
+
 from __future__ import annotations
 
 import dataclasses
-from dataclasses import field as dc_field
 from datetime import date, datetime
-from typing import Mapping, Optional
+from typing import Any, ClassVar, Mapping, Optional
 
+import pydantic
+
+from cl_sii.base.constants import SII_OFFICIAL_TZ
 from cl_sii.dte import data_models as dte_data_models
 from cl_sii.dte.constants import TipoDteEnum
+from cl_sii.libs import tz_utils
 from cl_sii.rut import Rut
+
+from . import constants
 
 
 def validate_cesion_seq(value: int) -> None:
@@ -32,9 +39,11 @@ def validate_cesion_seq(value: int) -> None:
     Validate value for sequence number of a "cesión".
 
     :raises ValueError:
-
     """
-    if value < 1:
+    if (
+        value < constants.CESION_SEQUENCE_NUMBER_MIN_VALUE
+        or value > constants.CESION_SEQUENCE_NUMBER_MAX_VALUE
+    ):
         raise ValueError("Value is out of the valid range.", value)
 
 
@@ -43,112 +52,273 @@ def validate_cesion_monto(value: int) -> None:
     Validate amount of the "cesión".
 
     :raises ValueError:
-
     """
-    if value < 0:
+    if (
+        value < constants.CESION_MONTO_CEDIDO_FIELD_MIN_VALUE
+        or value > constants.CESION_MONTO_CEDIDO_FIELD_MAX_VALUE
+    ):
         raise ValueError("Value is out of the valid range.", value)
 
 
-def validate_clean_str(value: str) -> None:
-    if len(value.strip()) != len(value):
-        raise ValueError("Value has leading or trailing whitespace characters.", value)
+def validate_cesion_dte_tipo_dte(value: TipoDteEnum) -> None:
+    """
+    Validate "tipo DTE" of the "cesión".
+
+    :raises ValueError:
+    """
+    if value not in constants.TIPO_DTE_CEDIBLES:
+        raise ValueError('Value is not "cedible".', value)
 
 
-def validate_non_empty_str(value: str) -> None:
-    if len(value.strip()) == 0:
-        raise ValueError("String (stripped) length is 0.")
+def validate_datetime_tz_aware(value: datetime) -> None:
+    """
+    Validate that a datetime is time zone–aware.
+
+    :raises ValueError:
+    """
+    if not tz_utils.dt_is_aware(value):
+        raise ValueError('Value must be time zone–aware')
 
 
-@dataclasses.dataclass(frozen=True)
+def validate_cesion_and_dte_montos(cesion_value: int, dte_value: int) -> None:
+    """
+    Validate amounts of the "cesión" and its associated DTE.
+
+    :raises ValueError:
+    """
+    if not (cesion_value <= dte_value):
+        raise ValueError('Value of "cesión" must be <= value of DTE.', cesion_value, dte_value)
+
+
+@pydantic.dataclasses.dataclass(
+    frozen=True,
+    config=type('Config', (), dict(
+        arbitrary_types_allowed=True,
+    ))
+)
 class CesionNaturalKey:
-
     """
     Natural key of a "cesión" of a DTE.
 
     The class instances are immutable.
 
+    This group of fields uniquely identifies a "cesión".
+
+    >>> instance = CesionNaturalKey(
+    ...     dte_data_models.DteNaturalKey(
+    ...         Rut('60910000-1'), TipoDteEnum.FACTURA_ELECTRONICA, 2093465,
+    ...     ),
+    ...     1,
+    ... )
     """
 
-    dte_key: dte_data_models.DteNaturalKey = dc_field()
+    ###########################################################################
+    # Fields
+    ###########################################################################
+
+    dte_key: dte_data_models.DteNaturalKey
     """
     Natural key of the "cesión"'s DTE.
     """
 
-    seq: int = dc_field()
+    seq: int
     """
     Sequence number of the "cesión". Must be >= 1.
     """
-
-    def __post_init__(self) -> None:
-        """
-        Run validation automatically after setting the fields values.
-
-        :raises TypeError, ValueError:
-
-        """
-        if not isinstance(self.dte_key, dte_data_models.DteNaturalKey):
-            raise TypeError("Inappropriate type of 'dte_key'.")
-        if not isinstance(self.seq, int):
-            raise TypeError("Inappropriate type of 'seq'.")
-
-        validate_cesion_seq(self.seq)
-
-    def as_dict(self) -> Mapping[str, object]:
-        return dataclasses.asdict(self)
 
     @property
     def slug(self) -> str:
         """
         Return an slug representation (that preserves uniquess) of the instance.
         """
-        # note: based on 'cl_sii.dte.data_models.DteNaturalKey.slug'
-
+        # Note: Based on 'cl_sii.dte.data_models.DteNaturalKey.slug'.
         return f'{self.dte_key.slug}--{self.seq}'
 
+    ###########################################################################
+    # Custom Methods
+    ###########################################################################
 
-@dataclasses.dataclass(frozen=True)
-class CesionDataL0(CesionNaturalKey):
+    def as_dict(self) -> Mapping[str, object]:
+        return dataclasses.asdict(self)
 
+    ###########################################################################
+    # Validators
+    ###########################################################################
+
+    @pydantic.validator('dte_key')
+    def validate_dte_tipo_dte(cls, v: object) -> object:
+        if isinstance(v, dte_data_models.DteNaturalKey):
+            validate_cesion_dte_tipo_dte(v.tipo_dte)
+        return v
+
+    @pydantic.validator('seq')
+    def validate_seq(cls, v: object) -> object:
+        if isinstance(v, int):
+            validate_cesion_seq(v)
+        return v
+
+
+@pydantic.dataclasses.dataclass(
+    frozen=True,
+    config=type('Config', (), dict(
+        arbitrary_types_allowed=True,
+    ))
+)
+class CesionAltNaturalKey:
     """
-    Data of a "cesión" (level 0).
+    Alternative natural key of a "cesión" of a DTE.
 
+    Useful when the sequence number is unavailable, such as in "cesiones periodo".
+
+    The class instances are immutable.
+
+    .. warning::
+        It is assumed that it is impossible to "ceder" a given DTE by a given "cedente" to a given
+        "cesionario" more than once in a particular instant (``fecha_cesion_dt``).
     """
 
-    cedente_rut: Rut = dc_field()
+    ###########################################################################
+    # Constants
+    ###########################################################################
+
+    DATETIME_FIELDS_TZ: ClassVar[tz_utils.PytzTimezone] = SII_OFFICIAL_TZ
+
+    ###########################################################################
+    # Fields
+    ###########################################################################
+
+    dte_key: dte_data_models.DteNaturalKey
+    """
+    Natural key of the "cesión"'s DTE.
+    """
+
+    cedente_rut: Rut
     """
     RUT of the "cedente".
     """
 
-    cesionario_rut: Rut = dc_field()
+    cesionario_rut: Rut
     """
     RUT of the "cesionario".
     """
 
-    # TODO: find out validation rules with regard to previous "cesión"s or DTE's amounts.
-    monto: int = dc_field()
+    fecha_cesion_dt: datetime
     """
-    Amount of the "cesión".
+    Date and time at which the "cesión" happened.
     """
 
-    def __post_init__(self) -> None:
+    @property
+    def slug(self) -> str:
         """
-        Run validation automatically after setting the fields values.
-
-        :raises TypeError, ValueError:
-
+        Return a slug representation (that preserves uniquess) of the instance.
         """
-        super().__post_init__()
+        # Note: Based on 'cl_sii.dte.data_models.DteNaturalKey.slug'.
 
-        # TODO: validate value of 'fecha_cesion_dt_naive', in relation to the DTE data.
+        _fecha_cesion_dt = self.fecha_cesion_dt.astimezone(self.DATETIME_FIELDS_TZ)
+        fecha_cesion_dt: str = _fecha_cesion_dt.isoformat()
 
-        if not isinstance(self.cedente_rut, Rut):
-            raise TypeError("Inappropriate type of 'cedente_rut'.")
-        if not isinstance(self.cesionario_rut, Rut):
-            raise TypeError("Inappropriate type of 'cesionario_rut'.")
-        if not isinstance(self.monto, int):
-            raise TypeError("Inappropriate type of 'monto'.")
+        return f'{self.dte_key.slug}--{self.cedente_rut}--{self.cesionario_rut}--{fecha_cesion_dt}'
 
-        validate_cesion_monto(self.monto)
+    ###########################################################################
+    # Custom Methods
+    ###########################################################################
+
+    def as_dict(self) -> Mapping[str, object]:
+        return dataclasses.asdict(self)
+
+    ###########################################################################
+    # Validators
+    ###########################################################################
+
+    @pydantic.validator('dte_key')
+    def validate_dte_tipo_dte(cls, v: object) -> object:
+        if isinstance(v, dte_data_models.DteNaturalKey):
+            validate_cesion_dte_tipo_dte(v.tipo_dte)
+        return v
+
+    @pydantic.validator('fecha_cesion_dt')
+    def validate_datetime_tz_aware(cls, v: object) -> object:
+        if isinstance(v, datetime):
+            validate_datetime_tz_aware(v)
+        return v
+
+
+@pydantic.dataclasses.dataclass(
+    frozen=True,
+    config=type('Config', (), dict(
+        arbitrary_types_allowed=True,
+    ))
+)
+class CesionL0:
+    """
+    Data of a "cesión" (level 0).
+
+    Its fields are enough to uniquely identify a "cesión" but nothing more.
+
+    The class instances are immutable.
+    """
+
+    ###########################################################################
+    # Constants
+    ###########################################################################
+
+    DATETIME_FIELDS_TZ: ClassVar[tz_utils.PytzTimezone] = SII_OFFICIAL_TZ
+
+    ###########################################################################
+    # Fields
+    ###########################################################################
+
+    dte_key: dte_data_models.DteNaturalKey
+    """
+    Natural key of the "cesión"'s DTE.
+    """
+
+    seq: Optional[int]
+    """
+    Sequence number of the "cesión". Must be >= 1.
+    """
+
+    cedente_rut: Rut
+    """
+    RUT of the "cedente".
+    """
+
+    cesionario_rut: Rut
+    """
+    RUT of the "cesionario".
+    """
+
+    fecha_cesion_dt: datetime
+    """
+    Date and time at which the "cesión" happened.
+    """
+
+    @property
+    def natural_key(self) -> Optional[CesionNaturalKey]:
+        if self.seq is not None:
+            return CesionNaturalKey(
+                dte_key=self.dte_key,
+                seq=self.seq,
+            )
+        else:
+            return None
+
+    @property
+    def alt_natural_key(self) -> CesionAltNaturalKey:
+        return CesionAltNaturalKey(
+            dte_key=self.dte_key,
+            cedente_rut=self.cedente_rut,
+            cesionario_rut=self.cesionario_rut,
+            fecha_cesion_dt=self.fecha_cesion_dt,
+        )
+
+    @property
+    def slug(self) -> str:
+        """
+        Return an slug representation (that preserves uniquess) of the instance.
+        """
+        # Note: Based on 'cl_sii.dte.data_models.DteNaturalKey.slug'.
+        return self.alt_natural_key.slug
 
     @property
     def dte_emisor_rut(self) -> Rut:
@@ -162,63 +332,76 @@ class CesionDataL0(CesionNaturalKey):
     def dte_folio(self) -> int:
         return self.dte_key.folio
 
+    ###########################################################################
+    # Validators
+    ###########################################################################
 
-@dataclasses.dataclass(frozen=True)
-class CesionDataL1(CesionDataL0):
+    @pydantic.validator('dte_key')
+    def validate_dte_tipo_dte(cls, v: object) -> object:
+        if isinstance(v, dte_data_models.DteNaturalKey):
+            validate_cesion_dte_tipo_dte(v.tipo_dte)
+        return v
 
+    @pydantic.validator('seq')
+    def validate_seq(cls, v: object) -> object:
+        if isinstance(v, int):
+            validate_cesion_seq(v)
+        return v
+
+    @pydantic.validator('fecha_cesion_dt')
+    def validate_datetime_tz_aware(cls, v: object) -> object:
+        if isinstance(v, datetime):
+            validate_datetime_tz_aware(v)
+        return v
+
+
+@pydantic.dataclasses.dataclass(
+    frozen=True,
+    config=type('Config', (), dict(
+        arbitrary_types_allowed=True,
+    ))
+)
+class CesionL1(CesionL0):
     """
     Data of a "cesión" (level 1).
 
+    It is the minimal set of "cesión" data fields that are useful.
+    TODO: Explain why these fields were chosen as "minimal".
+
+    The class instances are immutable.
     """
 
-    fecha_firma_dt_naive: datetime = dc_field()
-    """
-    Datetime of 'Firma del Archivo de Transferencias'
+    ###########################################################################
+    # Fields
+    ###########################################################################
 
-    .. warning::
-        It is not equal to the datetime on which the SII received/processed
-        the "cesión".
-
+    monto_cedido: int
     """
-
-    dte_receptor_rut: Rut = dc_field()
-    """
-    RUT of the "receptor" of the DTE.
+    Amount of the "cesión".
     """
 
-    dte_fecha_emision_date: date = dc_field()
+    fecha_ultimo_vencimiento: date
+    """
+    Date of "Ultimo Vencimiento".
+    """
+
+    dte_fecha_emision: date
     """
     Field 'fecha_emision' of the DTE.
 
     .. warning:: It may not match the **real date** on which the DTE was issued
         or received/processed by SII.
-
     """
 
-    dte_monto_total: int = dc_field()
+    dte_receptor_rut: Rut
+    """
+    RUT of the "receptor" of the DTE.
+    """
+
+    dte_monto_total: int
     """
     Total amount of the DTE.
     """
-
-    def __post_init__(self) -> None:
-        """
-        Run validation automatically after setting the fields values.
-
-        :raises TypeError, ValueError:
-
-        """
-        super().__post_init__()
-
-        # TODO: validate value of 'fecha_firma_dt_naive', in relation to the DTE data.
-
-        if not isinstance(self.fecha_firma_dt_naive, datetime):
-            raise TypeError("Inappropriate type of 'fecha_firma_dt_naive'.")
-        if not isinstance(self.dte_receptor_rut, Rut):
-            raise TypeError("Inappropriate type of 'dte_receptor_rut'.")
-        if not isinstance(self.dte_fecha_emision_date, date):
-            raise TypeError("Inappropriate type of 'dte_fecha_emision_date'.")
-        if not isinstance(self.dte_monto_total, int):
-            raise TypeError("Inappropriate type of 'dte_monto_total'.")
 
     @property
     def dte_vendedor_rut(self) -> Rut:
@@ -227,7 +410,7 @@ class CesionDataL1(CesionDataL0):
 
         :raises ValueError:
         """
-        return self.get_dte_data_l1().vendedor_rut
+        return self.as_dte_data_l1().vendedor_rut
 
     @property
     def dte_deudor_rut(self) -> Rut:
@@ -236,88 +419,131 @@ class CesionDataL1(CesionDataL0):
 
         :raises ValueError:
         """
-        return self.get_dte_data_l1().deudor_rut
+        return self.as_dte_data_l1().deudor_rut
 
-    def get_dte_data_l1(self) -> dte_data_models.DteDataL1:
+    ###########################################################################
+    # Custom Methods
+    ###########################################################################
+
+    def as_dte_data_l1(self) -> dte_data_models.DteDataL1:
         return dte_data_models.DteDataL1(
             emisor_rut=self.dte_key.emisor_rut,
             tipo_dte=self.dte_key.tipo_dte,
             folio=self.dte_key.folio,
-            fecha_emision_date=self.dte_fecha_emision_date,
+            fecha_emision_date=self.dte_fecha_emision,
             receptor_rut=self.dte_receptor_rut,
             monto_total=self.dte_monto_total,
         )
 
+    ###########################################################################
+    # Validators
+    ###########################################################################
 
-@dataclasses.dataclass(frozen=True)
-class CesionDataL2(CesionDataL1):
+    # TODO: Validate value of 'fecha_cesion_dt' in relation to the DTE data.
 
+    @pydantic.validator('monto_cedido')
+    def validate_monto_cedido(cls, v: object) -> object:
+        if isinstance(v, int):
+            validate_cesion_monto(v)
+        return v
+
+    @pydantic.root_validator(skip_on_failure=True)
+    def validate_monto_cedido_does_not_exceed_dte_monto_total(
+        cls, values: Mapping[str, object],
+    ) -> Mapping[str, object]:
+        monto_cedido = values['monto_cedido']
+        dte_monto_total = values['dte_monto_total']
+
+        if isinstance(monto_cedido, int) and isinstance(dte_monto_total, int):
+            validate_cesion_and_dte_montos(cesion_value=monto_cedido, dte_value=dte_monto_total)
+
+        return values
+
+
+@pydantic.dataclasses.dataclass(
+    frozen=True,
+    config=type('Config', (), dict(
+        anystr_strip_whitespace=True,
+        arbitrary_types_allowed=True,
+        min_anystr_length=1,
+    ))
+)
+class CesionL2(CesionL1):
     """
     Data of a "cesión" (level 2).
 
+    The class instances are immutable.
     """
 
-    ultimo_vencimiento_date: date = dc_field()
+    ###########################################################################
+    # Fields
+    ###########################################################################
+
+    fecha_firma_dt: Optional[datetime] = dataclasses.field(default=None, repr=False)
     """
-    Date of "Ultimo Vencimiento".
+    Datetime of 'Firma del Archivo de Transferencias'
+
+    .. warning::
+        It is not equal to the datetime on which the SII received/processed
+        the "cesión".
     """
 
-    cedente_razon_social: str = dc_field()
+    cedente_razon_social: Optional[str] = dataclasses.field(default=None, repr=False)
     """
     "Razón social" (legal name) of the "cedente".
     """
 
-    cedente_email: str = dc_field()
+    cesionario_razon_social: Optional[str] = dataclasses.field(default=None, repr=False)
+    """
+    "Razón social" (legal name) of the "cesionario".
+    """
+
+    cedente_email: Optional[str] = dataclasses.field(default=None, repr=False)
     """
     Email address of the "cedente".
 
     .. warning:: Value may be an invalid email address.
     """
 
-    cesionario_razon_social: str = dc_field()
-    """
-    "Razón social" (legal name) of the "cesionario".
-    """
-
-    cesionario_email: str = dc_field()
+    cesionario_email: Optional[str] = dataclasses.field(default=None, repr=False)
     """
     Email address of the "cesionario".
 
     .. warning:: Value may be an invalid email address.
     """
 
-    dte_emisor_razon_social: str = dc_field()
+    dte_emisor_razon_social: Optional[str] = dataclasses.field(default=None, repr=False)
     """
     "Razón social" (legal name) of the "emisor" of the DTE.
     """
 
-    # dte_emisor_email: str = dc_field()
+    # dte_emisor_email: str
     # """
     # Email address of the "emisor" of the DTE.
     #
     # .. warning:: Value may be an invalid email address.
     # """
 
-    dte_receptor_razon_social: str = dc_field()
+    dte_receptor_razon_social: Optional[str] = dataclasses.field(default=None, repr=False)
     """
     "Razón social" (legal name) of the "receptor" of the DTE.
     """
 
-    # dte_receptor_email: str = dc_field()
+    # dte_receptor_email: str
     # """
     # Email address of the "receptor" of the DTE.
     #
     # .. warning:: Value may be an invalid email address.
     # """
 
-    dte_deudor_email: Optional[str] = dc_field(default=None)
+    dte_deudor_email: Optional[str] = dataclasses.field(default=None, repr=False)
     """
     Email address of the "deudor" of the DTE.
 
     .. warning:: Value may be an invalid email address.
     """
 
-    cedente_declaracion_jurada: Optional[str] = dc_field(default=None)
+    cedente_declaracion_jurada: Optional[str] = dataclasses.field(default=None, repr=False)
     """
     "Declaración Jurada" by the "cedente".
 
@@ -337,131 +563,90 @@ class CesionDataL2(CesionDataL1):
         de la factura
         EMPRESAS LA POLAR S.A., RUT 96874030-K,
         deacuerdo a lo establecido en la Ley N°19.983."
-
     """
 
-    dte_fecha_vencimiento_date: Optional[date] = dc_field(default=None)
+    dte_fecha_vencimiento: Optional[date] = None
     """
     "Fecha de vencimiento (pago)" of the DTE.
     """
 
-    contacto_nombre: Optional[str] = dc_field(default=None)
+    contacto_nombre: Optional[str] = None
     """
     Name of the contact person.
 
     > Persona de Contacto para aclarar dudas.
     """
 
-    contacto_telefono: Optional[str] = dc_field(default=None)
+    contacto_telefono: Optional[str] = dataclasses.field(default=None, repr=False)
     """
     Phone number of the contact person.
     """
 
-    contacto_email: Optional[str] = dc_field(default=None)
+    contacto_email: Optional[str] = dataclasses.field(default=None, repr=False)
     """
     Email address of the contact person.
     """
 
-    def __post_init__(self) -> None:
-        """
-        Run validation automatically after setting the fields values.
+    ###########################################################################
+    # Custom Methods
+    ###########################################################################
 
-        :raises TypeError, ValueError:
-
-        """
-        super().__post_init__()
-
-        # note: delegate some validation to 'dte_data_models.DteDataL2'.
-        _ = self.get_dte_data_l2()
-
-        # TODO: validate value of 'ultimo_vencimiento_date', in relation to the DTE data.
-
-        if not isinstance(self.ultimo_vencimiento_date, date):
-            raise TypeError("Inappropriate type of 'ultimo_vencimiento_date'.")
-
-        if not isinstance(self.cedente_razon_social, str):
-            raise TypeError("Inappropriate type of 'cedente_razon_social'.")
-        validate_clean_str(self.cedente_razon_social)
-        validate_non_empty_str(self.cedente_razon_social)
-
-        if not isinstance(self.cedente_email, str):
-            raise TypeError("Inappropriate type of 'cedente_email'.")
-        validate_clean_str(self.cedente_email)
-        validate_non_empty_str(self.cedente_email)
-
-        if not isinstance(self.cesionario_razon_social, str):
-            raise TypeError("Inappropriate type of 'cesionario_razon_social'.")
-        validate_clean_str(self.cesionario_razon_social)
-        validate_non_empty_str(self.cesionario_razon_social)
-
-        if not isinstance(self.cesionario_email, str):
-            raise TypeError("Inappropriate type of 'cesionario_email'.")
-        validate_clean_str(self.cesionario_email)
-        validate_non_empty_str(self.cesionario_email)
-
-        if not isinstance(self.dte_emisor_razon_social, str):
-            raise TypeError("Inappropriate type of 'dte_emisor_razon_social'.")
-        validate_clean_str(self.dte_emisor_razon_social)
-        validate_non_empty_str(self.dte_emisor_razon_social)
-
-        # if not isinstance(self.dte_emisor_email, str):
-        #     raise TypeError("Inappropriate type of 'dte_emisor_email'.")
-        # validate_clean_str(self.dte_emisor_email)
-        # validate_non_empty_str(self.dte_emisor_email)
-
-        if not isinstance(self.dte_receptor_razon_social, str):
-            raise TypeError("Inappropriate type of 'dte_receptor_razon_social'.")
-        validate_clean_str(self.dte_receptor_razon_social)
-        validate_non_empty_str(self.dte_receptor_razon_social)
-
-        # if not isinstance(self.dte_receptor_email, str):
-        #     raise TypeError("Inappropriate type of 'dte_receptor_email'.")
-        # validate_clean_str(self.dte_receptor_email)
-        # validate_non_empty_str(self.dte_receptor_email)
-
-        if self.dte_deudor_email is not None:
-            if not isinstance(self.dte_deudor_email, str):
-                raise TypeError("Inappropriate type of 'dte_deudor_email'.")
-            validate_clean_str(self.dte_deudor_email)
-            validate_non_empty_str(self.dte_deudor_email)
-        if self.cedente_declaracion_jurada is not None:
-            if not isinstance(self.cedente_declaracion_jurada, str):
-                raise TypeError("Inappropriate type of 'cedente_declaracion_jurada'.")
-            # validate_clean_str(self.cedente_declaracion_jurada)
-            validate_non_empty_str(self.cedente_declaracion_jurada)
-
-        if self.contacto_nombre is not None:
-            if not isinstance(self.contacto_nombre, str):
-                raise TypeError("Inappropriate type of 'contacto_nombre'.")
-            validate_clean_str(self.contacto_nombre)
-            validate_non_empty_str(self.contacto_nombre)
-
-        if self.contacto_telefono is not None:
-            if not isinstance(self.contacto_telefono, str):
-                raise TypeError("Inappropriate type of 'contacto_telefono'.")
-            validate_clean_str(self.contacto_telefono)
-            validate_non_empty_str(self.contacto_telefono)
-
-        if self.contacto_email is not None:
-            if not isinstance(self.contacto_email, str):
-                raise TypeError("Inappropriate type of 'contacto_email'.")
-            validate_clean_str(self.contacto_email)
-            validate_non_empty_str(self.contacto_email)
-
-        dte_data_models.validate_contribuyente_razon_social(self.cedente_razon_social)
-        dte_data_models.validate_contribuyente_razon_social(self.cesionario_razon_social)
-        dte_data_models.validate_contribuyente_razon_social(self.dte_emisor_razon_social)
-        dte_data_models.validate_contribuyente_razon_social(self.dte_receptor_razon_social)
-
-    def get_dte_data_l2(self) -> dte_data_models.DteDataL2:
+    def as_dte_data_l2(self) -> dte_data_models.DteDataL2:
         return dte_data_models.DteDataL2(
             emisor_rut=self.dte_key.emisor_rut,
             tipo_dte=self.dte_key.tipo_dte,
             folio=self.dte_key.folio,
-            fecha_emision_date=self.dte_fecha_emision_date,
+            fecha_emision_date=self.dte_fecha_emision,
             receptor_rut=self.dte_receptor_rut,
             monto_total=self.dte_monto_total,
             emisor_razon_social=self.dte_emisor_razon_social,
             receptor_razon_social=self.dte_receptor_razon_social,
-            fecha_vencimiento_date=self.dte_fecha_vencimiento_date,
+            fecha_vencimiento_date=self.dte_fecha_vencimiento,
         )
+
+    ###########################################################################
+    # Validators
+    ###########################################################################
+
+    # TODO: Validate value of 'fecha_firma_dt' in relation to the DTE data.
+
+    # TODO: Validate value of 'fecha_ultimo_vencimiento' in relation to the DTE data.
+
+    @pydantic.validator('fecha_firma_dt')
+    def validate_datetime_tz_aware(cls, v: object) -> object:
+        if v is not None:
+            if isinstance(v, datetime):
+                validate_datetime_tz_aware(v)
+        return v
+
+    @pydantic.validator(
+        'cedente_razon_social',
+        'cesionario_razon_social',
+        'dte_emisor_razon_social',
+        'dte_receptor_razon_social',
+    )
+    def validate_contribuyente_razon_social(cls, v: object) -> object:
+        if isinstance(v, str):
+            dte_data_models.validate_contribuyente_razon_social(v)
+        return v
+
+    @pydantic.root_validator(skip_on_failure=True)
+    def validate_dte_data_l2(cls, values: Mapping[str, Any]) -> Mapping[str, object]:
+        dte_key = values['dte_key']
+        try:
+            # Note: Delegate some validation to 'dte_data_models.DteDataL2'.
+            _ = dte_data_models.DteDataL2(
+                emisor_rut=dte_key.emisor_rut if dte_key is not None else None,
+                tipo_dte=dte_key.tipo_dte if dte_key is not None else None,
+                folio=dte_key.folio if dte_key is not None else None,
+                fecha_emision_date=values['dte_fecha_emision'],  # type: ignore[arg-type]
+                receptor_rut=values['dte_receptor_rut'],  # type: ignore[arg-type]
+                monto_total=values['dte_monto_total'],  # type: ignore[arg-type]
+                emisor_razon_social=values['dte_emisor_razon_social'],
+                receptor_razon_social=values['dte_receptor_razon_social'],
+                fecha_vencimiento_date=values['dte_fecha_vencimiento'],
+            )
+        except (TypeError, ValueError):
+            raise
+
+        return values

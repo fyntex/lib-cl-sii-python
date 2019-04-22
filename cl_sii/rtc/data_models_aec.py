@@ -1,25 +1,365 @@
 """
 Data models for RTC AEC XML docs/files
 ======================================
-
 """
+
 from __future__ import annotations
 
 import dataclasses
-from dataclasses import field as dc_field
 from datetime import date, datetime
-from typing import Mapping, Optional, Sequence
+from typing import ClassVar, Mapping, Tuple, Optional, Sequence
 
+import pydantic
+
+from cl_sii.base.constants import SII_OFFICIAL_TZ
 from cl_sii.dte import data_models as dte_data_models
+from cl_sii.libs import tz_utils
 from cl_sii.rut import Rut
 
 from . import data_models
-from .data_models import validate_clean_str, validate_non_empty_str
 
 
-@dataclasses.dataclass(frozen=True)
+@pydantic.dataclasses.dataclass(
+    frozen=True,
+    config=type('Config', (), dict(
+        anystr_strip_whitespace=True,
+        arbitrary_types_allowed=True,
+        min_anystr_length=1,
+    ))
+)
+class AecXmlCesionData:
+    """
+    Data in XML element ``sii-dte:Cesion`` in an AEC XML doc.
+
+    ..seealso::
+        XML schema of ``{http://www.sii.cl/SiiDte}/Cesion`` in
+        'data/ref/factura_electronica/schemas-xml/Cesion_v10.xsd' (c7adc5a2)
+
+    ..note:: An AEC XML doc includes one or more ``Cesion`` XML elements.
+
+    Excluded XML elements:
+
+    * ``sii-dte:DocumentoCesion/sii-dte:OtrasCondiciones`` (0..1 occurrences)
+    * ``sii-dte:DocumentoCesion/sii-dte:Cedente/sii-dte:RUTAutorizado`` (1..3 occurrences)
+    * ``ds:Signature`` (1..3 occurrences)
+    """
+
+    ###########################################################################
+    # Constants
+    ###########################################################################
+
+    DATETIME_FIELDS_TZ: ClassVar[tz_utils.PytzTimezone] = SII_OFFICIAL_TZ
+
+    ###########################################################################
+    # Fields
+    ###########################################################################
+
+    dte: dte_data_models.DteDataL1
+    """
+    DTE of the "cesión".
+
+    AEC doc XML elements:
+    * '...//Cesion//DocumentoCesion//IdDTE//RUTEmisor'
+    * '...//Cesion//DocumentoCesion//IdDTE//TipoDTE'
+    * '...//Cesion//DocumentoCesion//IdDTE//Folio'
+    * '...//Cesion//DocumentoCesion//IdDTE//FchEmis'
+    * '...//Cesion//DocumentoCesion//IdDTE//RUTReceptor'
+    * '...//Cesion//DocumentoCesion//IdDTE//MntTotal'
+
+    RPETC email:
+    * attachment / 'Documento Cedido' / (initial text before ' - Monto Total')
+    * attachment / 'Documento Cedido' / 'Emisor'
+    * attachment / 'Documento Cedido' / 'Receptor'
+    * attachment / 'Documento Cedido' / 'Fecha Emision'
+    """
+
+    seq: int
+    """
+    Sequence number of the "cesión". Must be >= 1.
+
+    AEC doc XML element: '..//Cesion//DocumentoCesion//SeqCesion'
+
+    RPETC email: attachment / 'Cesion' / 'Seq'
+    """
+
+    cedente_rut: Rut
+    """
+    RUT of the "cedente".
+
+    AEC doc XML element: '..//Cesion//DocumentoCesion//Cedente//RUT'
+
+    RPETC email: attachment / 'Cedente' / 'Cedido por' (fraction)
+    """
+
+    cesionario_rut: Rut
+    """
+    RUT of the "cesionario".
+
+    AEC doc XML element: '..//Cesion//DocumentoCesion//Cesionario//RUT'
+
+    RPETC email: attachment / 'Cesionario' / 'Cedido a' (fraction)
+    """
+
+    monto_cesion: int
+    """
+    Amount of the "cesión".
+
+    AEC doc XML element: '..//Cesion//DocumentoCesion//MontoCesion'
+
+    RPETC email: attachment / 'Cesion' / 'Monto Cedido'
+    """
+
+    fecha_cesion_dt: datetime
+    """
+    Datetime of "cesión".
+
+    e.g. `2019-03-29T10:18:35` (XML), 2019-03-29 10:18:35 (txt)
+
+    > TimeStamp de la Cesion del DTE.
+
+    AEC doc XML element: '..//Cesion//DocumentoCesion//TmstCesion'
+
+    RPETC email: attachment / 'Cesion' / 'Fecha de la Cesion'
+    """
+
+    fecha_ultimo_vencimiento: date
+    """
+    Date of "Ultimo Vencimiento".
+
+    e.g. `2019-04-28` (XML), 2019-03-29 10:18:35 (txt)
+
+    AEC doc XML element: '..//Cesion//DocumentoCesion//UltimoVencimiento'
+
+    RPETC email: attachment / 'Cesion' / 'Ultimo Vencimiento'
+    """
+
+    cedente_razon_social: str
+    """
+    "Razón social" (legal name) of the "cedente".
+
+    AEC doc XML element: '..//Cesion//DocumentoCesion//Cedente//RazonSocial'
+
+    RPETC email: attachment / 'Cedente' / 'Cedido por' (fraction)
+    """
+
+    cedente_direccion: str = dataclasses.field(repr=False)
+    """
+    Address ("Dirección") of the "cedente".
+
+    AEC doc XML element: '..//Cesion//DocumentoCesion//Cedente//Direccion'
+
+    RPETC email: attachment / 'Cedente' / 'Direccion'
+    """
+
+    cedente_email: str = dataclasses.field(repr=False)
+    """
+    Email address of the "cedente".
+
+    .. warning:: Value may be an invalid email address.
+
+    AEC doc XML element: '..//Cesion//DocumentoCesion//Cedente//eMail'
+
+    RPETC email: attachment / 'Cedente' / 'eMail'
+    """
+
+    # There 1 to 3 XML elements '..//Cesion//DocumentoCesion//Cedente//RUTAutorizado'.
+    #
+    # cedente_persona_autorizada_rut: Rut
+    # """
+    # "Persona Autorizada" by the "cedente" to "Firmar la Transferencia" (RUT).
+    #
+    # .. note:: It might be the "cedente" itself, a "persona natural", etc.
+    #
+    # One of the
+    # > Lista de Personas Autorizadas por el Cedente a Firmar la Transferencia
+    #
+    # AEC doc XML element (1..3 occurrences of 'RUTAutorizado'):
+    #     '..//Cesion//DocumentoCesion//Cedente//RUTAutorizado//RUT'
+    # """
+    #
+    # cedente_persona_autorizada_nombre: str
+    # """
+    # "Persona Autorizada" by the "cedente" to "Firmar la Transferencia" (name).
+    #
+    # .. note:: It might be the "cedente" itself, a "persona natural", etc.
+    #
+    # One of the
+    # > Lista de Personas Autorizadas por el Cedente a Firmar la Transferencia
+    #
+    # AEC doc XML element (1..3 occurrences of 'RUTAutorizado'):
+    #     '..//Cesion//DocumentoCesion//Cedente//RUTAutorizado//Nombre'
+    # """
+
+    cesionario_razon_social: str
+    """
+    "Razón social" (legal name) of the "cesionario".
+
+    AEC doc XML element: '..//Cesion//DocumentoCesion//Cesionario//RazonSocial'
+
+    RPETC email: attachment / 'Cesionario' / 'Cedido a' (fraction)
+    """
+
+    cesionario_direccion: str = dataclasses.field(repr=False)
+    """
+    Address ("Dirección") of the "cesionario".
+
+    AEC doc XML element: '..//Cesion//DocumentoCesion//Cesionario//Direccion'
+
+    RPETC email: attachment / 'Cesionario' / 'Direccion'
+    """
+
+    cesionario_email: str = dataclasses.field(repr=False)
+    """
+    Email address of the "cesionario".
+
+    .. warning:: Value may be an invalid email address.
+
+    AEC doc XML element: '..//Cesion//DocumentoCesion//Cesionario//eMail'
+
+    RPETC email: attachment / 'Cesionario' / 'eMail'
+    """
+
+    dte_deudor_email: Optional[str] = dataclasses.field(default=None, repr=False)
+    """
+    Email address of the "deudor" of the DTE.
+
+    .. warning:: Value may be an invalid email address.
+
+    AEC doc XML element: '..//Cesion//DocumentoCesion//eMailDeudor'
+
+    RPETC email: no.
+    """
+
+    cedente_declaracion_jurada: Optional[str] = dataclasses.field(default=None, repr=False)
+    """
+    "Declaración Jurada" by the "cedente".
+
+    > Declaracion Jurada de Disponibilidad de Documentacion No Electronica.
+
+    .. note::
+        The RUT and "razón social" of the "deudor" of the DTE are included
+        in the text. However, this field is optional.
+
+    Example:
+        "Se declara bajo juramento que
+        COMERCIALIZADORA INNOVA MOBEL SPA, RUT 76399752-9
+        ha puesto a disposición del cesionario
+        ST CAPITAL S.A., RUT 76389992-6,
+        el o los documentos donde constan los recibos de las mercaderías
+        entregadas o servicios prestados, entregados por parte del deudor
+        de la factura
+        EMPRESAS LA POLAR S.A., RUT 96874030-K,
+        deacuerdo a lo establecido en la Ley N°19.983."
+
+    AEC doc XML element (optional): '..//Cesion//DocumentoCesion//Cedente//DeclaracionJurada'
+
+    RPETC email: attachment / 'Cesion' / 'Declaracion Jurada'
+    **but only whether "declaración jurada" was included or not**,
+    not the "declaración jurada" itself.
+    """
+
+    @property
+    def natural_key(self) -> data_models.CesionNaturalKey:
+        return data_models.CesionNaturalKey(dte_key=self.dte.natural_key, seq=self.seq)
+
+    @property
+    def alt_natural_key(self) -> data_models.CesionAltNaturalKey:
+        return data_models.CesionAltNaturalKey(
+            dte_key=self.dte.natural_key,
+            cedente_rut=self.cedente_rut,
+            cesionario_rut=self.cesionario_rut,
+            fecha_cesion_dt=self.fecha_cesion_dt,
+        )
+
+    ###########################################################################
+    # Validators
+    ###########################################################################
+
+    @pydantic.validator('dte')
+    def validate_dte_tipo_dte(cls, v: object) -> object:
+        if isinstance(v, dte_data_models.DteDataL0):
+            data_models.validate_cesion_dte_tipo_dte(v.tipo_dte)
+        return v
+
+    @pydantic.validator('seq')
+    def validate_seq(cls, v: object) -> object:
+        if isinstance(v, int):
+            data_models.validate_cesion_seq(v)
+        return v
+
+    @pydantic.validator('monto_cesion')
+    def validate_monto_cesion(cls, v: object) -> object:
+        if isinstance(v, int):
+            data_models.validate_cesion_monto(v)
+        return v
+
+    @pydantic.validator(
+        'cedente_razon_social',
+        'cesionario_razon_social',
+    )
+    def validate_contribuyente_razon_social(cls, v: object) -> object:
+        if isinstance(v, str):
+            dte_data_models.validate_contribuyente_razon_social(v)
+        return v
+
+    @pydantic.validator('fecha_cesion_dt')
+    def validate_datetime_tz_aware(cls, v: object) -> object:
+        if isinstance(v, datetime):
+            data_models.validate_datetime_tz_aware(v)
+        return v
+
+    @pydantic.root_validator(skip_on_failure=True)
+    def validate_fecha_cesion_dt_is_consistent_with_dte(
+        cls, values: Mapping[str, object],
+    ) -> Mapping[str, object]:
+        fecha_cesion_dt = values['fecha_cesion_dt']
+        dte = values['dte']
+
+        if isinstance(fecha_cesion_dt, datetime) and isinstance(dte, dte_data_models.DteDataL1):
+            pass  # TODO: Validate value of 'fecha_cesion_dt' in relation to the DTE data.
+
+        return values
+
+    @pydantic.root_validator(skip_on_failure=True)
+    def validate_monto_cesion_does_not_exceed_dte_monto_total(
+        cls, values: Mapping[str, object],
+    ) -> Mapping[str, object]:
+        monto_cesion = values['monto_cesion']
+        dte = values['dte']
+
+        if isinstance(monto_cesion, int) and isinstance(dte, dte_data_models.DteDataL1):
+            data_models.validate_cesion_and_dte_montos(
+                cesion_value=monto_cesion,
+                dte_value=dte.monto_total,
+            )
+
+        return values
+
+    @pydantic.root_validator(skip_on_failure=True)
+    def validate_fecha_ultimo_vencimiento_is_consistent_with_dte(
+        cls, values: Mapping[str, object],
+    ) -> Mapping[str, object]:
+        fecha_ultimo_vencimiento = values['fecha_ultimo_vencimiento']
+        dte = values['dte']
+
+        if (
+            isinstance(fecha_ultimo_vencimiento, date)
+            and isinstance(dte, dte_data_models.DteDataL1)
+        ):
+            pass  # TODO: Validate value of 'fecha_ultimo_vencimiento' in relation to the DTE data.
+
+        return values
+
+
+@pydantic.dataclasses.dataclass(
+    frozen=True,
+    config=type('Config', (), dict(
+        anystr_strip_whitespace=True,
+        arbitrary_types_allowed=True,
+        min_anystr_length=1,
+    ))
+)
 class AecXmlData:
-
     """
     Data in a "cesión"'s AEC XML doc.
 
@@ -52,45 +392,50 @@ class AecXmlData:
      Ref: data/ref/factura_electronica/schemas-xml/Cesion_v10.xsd#L222-L226 (c7adc5a2)
 
     Thus the minimum total number of XML signatures is 4.
-
     """
 
-    # TODO: after we implement a proper DTE XML data model, use that instead.
-    dte: dte_data_models.DteDataL2 = dc_field()
+    ###########################################################################
+    # Constants
+    ###########################################################################
+
+    DATETIME_FIELDS_TZ: ClassVar[tz_utils.PytzTimezone] = SII_OFFICIAL_TZ
+
+    ###########################################################################
+    # Fields
+    ###########################################################################
+
+    dte: dte_data_models.DteXmlData
     """
     DTE that was "cedido".
 
-    AEC doc XML element:
-        'DocumentoAEC//Cesiones//DTECedido//DocumentoDTECedido//DTE'
+    AEC doc XML element: 'DocumentoAEC//Cesiones//DTECedido//DocumentoDTECedido//DTE'
 
     RPETC email: attachment / 'Documento Cedido'
     """
 
-    cedente_rut: Rut = dc_field()
+    cedente_rut: Rut
     """
     RUT of the "cedente".
 
     > RUT que Genera el Archivo de Transferencias.
 
-    AEC doc XML element:
-        'DocumentoAEC//Caratula//RutCedente'
+    AEC doc XML element: 'DocumentoAEC//Caratula//RutCedente'
 
     RPETC email: attachment / 'Cedente' / 'Cedido por' (fraction)
     """
 
-    cesionario_rut: Rut = dc_field()
+    cesionario_rut: Rut
     """
     RUT of the "cesionario".
 
     > RUT a Quien Va Dirigido el Archivo de Transferencias.
 
-    AEC doc XML element:
-        'DocumentoAEC//Caratula//RutCesionario'
+    AEC doc XML element: 'DocumentoAEC//Caratula//RutCesionario'
 
     RPETC email: attachment / 'Cesionario' / 'Cedido a' (fraction)
     """
 
-    fecha_firma_dt_naive: datetime = dc_field()
+    fecha_firma_dt: datetime
     """
     Datetime of 'Firma del Archivo de Transferencias'
 
@@ -98,47 +443,43 @@ class AecXmlData:
 
     e.g. `2019-03-29T10:18:35` (XML), 2019-03-29 10:18:35 (txt)
 
-    AEC doc XML element:
-        'DocumentoAEC//Caratula//TmstFirmaEnvio'
+    AEC doc XML element: 'DocumentoAEC//Caratula//TmstFirmaEnvio'
 
     RPETC email: attachment / 'Cesion' / 'Fecha de la Cesion'
     """
 
-    cesiones: Sequence[AecXmlCesionData] = dc_field()
+    cesiones: Sequence[AecXmlCesionData]
     """
     List of structs for ``sii-dte:Cesion`` XML elements.
 
     ..warning::
         The items MUST be ordered according to their ``seq``, starting with
         the first "cesión" of the DTE (i.e. with ``seq = 1``).
-
     """
 
-    contacto_nombre: Optional[str] = dc_field(default=None)
+    contacto_nombre: Optional[str] = None
     """
     Name of the contact person.
 
     > Persona de Contacto para aclarar dudas.
 
-    AEC doc XML element:
-        'DocumentoAEC//Caratula//NmbContacto'
+    AEC doc XML element: 'DocumentoAEC//Caratula//NmbContacto'
 
     RPETC email: none.
     """
 
-    contacto_telefono: Optional[str] = dc_field(default=None)
+    contacto_telefono: Optional[str] = None
     """
     Phone number of the contact person.
 
     > Telefono de Contacto.
 
-    AEC doc XML element:
-        'DocumentoAEC//Caratula//FonoContacto'
+    AEC doc XML element: 'DocumentoAEC//Caratula//FonoContacto'
 
     RPETC email: none.
     """
 
-    contacto_email: Optional[str] = dc_field(default=None)
+    contacto_email: Optional[str] = None
     """
     Email address of the contact person.
 
@@ -146,45 +487,10 @@ class AecXmlData:
 
     .. warning:: Value may be an invalid email address.
 
-    AEC doc XML element:
-        'DocumentoAEC//Caratula//MailContacto'
+    AEC doc XML element: 'DocumentoAEC//Caratula//MailContacto'
 
     RPETC email: none.
     """
-
-    def __post_init__(self) -> None:
-        """
-        Run validation automatically after setting the fields values.
-
-        :raises TypeError, ValueError:
-
-        """
-        if not isinstance(self.cedente_rut, Rut):
-            raise TypeError("Inappropriate type of 'cedente_rut'.")
-        if not isinstance(self.cesionario_rut, Rut):
-            raise TypeError("Inappropriate type of 'cesionario_rut'.")
-        if not isinstance(self.fecha_firma_dt_naive, datetime):
-            raise TypeError("Inappropriate type of 'fecha_firma_dt_naive'.")
-
-        if self.contacto_nombre is not None:
-            if not isinstance(self.contacto_nombre, str):
-                raise TypeError("Inappropriate type of 'contacto_nombre'.")
-            validate_clean_str(self.contacto_nombre)
-            validate_non_empty_str(self.contacto_nombre)
-
-        if self.contacto_telefono is not None:
-            if not isinstance(self.contacto_telefono, str):
-                raise TypeError("Inappropriate type of 'contacto_telefono'.")
-            validate_clean_str(self.contacto_telefono)
-            validate_non_empty_str(self.contacto_telefono)
-
-        if self.contacto_email is not None:
-            if not isinstance(self.contacto_email, str):
-                raise TypeError("Inappropriate type of 'contacto_email'.")
-            validate_clean_str(self.contacto_email)
-            validate_non_empty_str(self.contacto_email)
-
-        self._validate_cesiones()
 
     @property
     def _last_cesion(self) -> AecXmlCesionData:
@@ -205,7 +511,7 @@ class AecXmlData:
         return self._last_cesion.seq
 
     @property
-    def monto(self) -> int:
+    def monto_cesion(self) -> int:
         """
         Amount of the "cesión".
 
@@ -216,44 +522,15 @@ class AecXmlData:
 
         RPETC email: attachment / 'Cesion' / 'Monto Cedido'
         """
-        return self._last_cesion.monto
+        return self._last_cesion.monto_cesion
 
     @property
-    def natural_key(self) -> data_models.CesionNaturalKey:
-        return data_models.CesionNaturalKey(dte_key=self.dte.natural_key, seq=self.seq)
+    def fecha_cesion_dt(self) -> datetime:
+        return self._last_cesion.fecha_cesion_dt
 
     @property
-    def slug(self) -> str:
-        """
-        Return an slug representation (that preserves uniquess) of the instance.
-        """
-        # note: based on 'cl_sii.dte.data_models.DteNaturalKey.slug'
-
-        return f'{self.dte.slug}--{self.seq}'
-
-    def as_dict(self) -> Mapping[str, object]:
-        return dataclasses.asdict(self)
-
-    def _validate_cesiones(self) -> None:
-        # TODO: validate that
-        #   - 'fecha_firma_dt_naive' matches the last cesion's 'fecha_cesion_dt_naive'.
-        #   - 'cedente_rut' matches the last cesion's 'cedente_rut'.
-        #   - 'cesionario_rut' matches the last cesion's 'cesionario_rut'.
-        #   - Each 'AecXmlCesionData.dte' must match the 'AecXmlData.dte'.
-
-        if len(self.cesiones) == 0:
-            raise ValueError("'cesiones' must be a non-empty list of 'AecXmlCesionData'.")
-
-        for ix, cesion in enumerate(self.cesiones, start=1):
-            if not isinstance(cesion, AecXmlCesionData):
-                raise TypeError("Inappropriate type of item in 'cesiones'.")
-            if cesion.seq != ix:
-                raise ValueError(
-                    "The items in 'cesiones' must be ordered according to their 'seq'.")
-
-    @property
-    def ultimo_vencimiento_date(self) -> date:
-        return self._last_cesion.ultimo_vencimiento_date
+    def fecha_ultimo_vencimiento(self) -> date:
+        return self._last_cesion.fecha_ultimo_vencimiento
 
     @property
     def cedente_razon_social(self) -> str:
@@ -295,18 +572,47 @@ class AecXmlData:
     def cedente_declaracion_jurada(self) -> Optional[str]:
         return self._last_cesion.cedente_declaracion_jurada
 
-    def get_cesion_l2(self) -> data_models.CesionDataL2:
-        return data_models.CesionDataL2(
+    @property
+    def natural_key(self) -> data_models.CesionNaturalKey:
+        return data_models.CesionNaturalKey(dte_key=self.dte.natural_key, seq=self.seq)
+
+    @property
+    def alt_natural_key(self) -> data_models.CesionAltNaturalKey:
+        return data_models.CesionAltNaturalKey(
+            dte_key=self.dte.natural_key,
+            cedente_rut=self.cedente_rut,
+            cesionario_rut=self.cesionario_rut,
+            fecha_cesion_dt=self.fecha_cesion_dt,
+        )
+
+    @property
+    def slug(self) -> str:
+        """
+        Return a slug representation (that preserves uniquess) of the instance.
+        """
+        # Note: Based on 'cl_sii.dte.data_models.DteNaturalKey.slug'.
+        return self.natural_key.slug
+
+    ###########################################################################
+    # Custom Methods
+    ###########################################################################
+
+    def as_dict(self) -> Mapping[str, object]:
+        return dataclasses.asdict(self)
+
+    def as_cesion_l2(self) -> data_models.CesionL2:
+        return data_models.CesionL2(
             dte_key=self.dte.natural_key,
             seq=self.seq,
             cedente_rut=self.cedente_rut,
             cesionario_rut=self.cesionario_rut,
-            monto=self.monto,
-            fecha_firma_dt_naive=self.fecha_firma_dt_naive,
+            fecha_cesion_dt=self.fecha_cesion_dt,
+            monto_cedido=self.monto_cesion,
+            fecha_firma_dt=self.fecha_firma_dt,
             dte_receptor_rut=self.dte.receptor_rut,
-            dte_fecha_emision_date=self.dte.fecha_emision_date,
+            dte_fecha_emision=self.dte.fecha_emision_date,
             dte_monto_total=self.dte.monto_total,
-            ultimo_vencimiento_date=self.ultimo_vencimiento_date,
+            fecha_ultimo_vencimiento=self.fecha_ultimo_vencimiento,
             cedente_razon_social=self.cedente_razon_social,
             cedente_email=self.cedente_email,
             cesionario_razon_social=self.cesionario_razon_social,
@@ -317,322 +623,101 @@ class AecXmlData:
             # dte_receptor_email=None,
             dte_deudor_email=self.dte_deudor_email,
             cedente_declaracion_jurada=self.cedente_declaracion_jurada,
-            dte_fecha_vencimiento_date=self.dte.fecha_vencimiento_date,
+            dte_fecha_vencimiento=self.dte.fecha_vencimiento_date,
             contacto_nombre=self.contacto_nombre,
             contacto_telefono=self.contacto_telefono,
             contacto_email=self.contacto_email,
         )
 
-
-@dataclasses.dataclass(frozen=True)
-class AecXmlCesionData:
-
-    """
-    Data in XML element ``sii-dte:Cesion`` in an AEC XML doc.
-
-    ..seealso::
-        XML schema of ``{http://www.sii.cl/SiiDte}/Cesion`` in
-        'data/ref/factura_electronica/schemas-xml/Cesion_v10.xsd' (c7adc5a2)
-
-    ..note:: An AEC XML doc includes one or more ``Cesion`` XML elements.
-
-    Excluded XML elements:
-
-    * ``sii-dte:DocumentoCesion/sii-dte:OtrasCondiciones`` (0..1 occurrences)
-    * ``sii-dte:DocumentoCesion/sii-dte:Cedente/sii-dte:RUTAutorizado`` (1..3 occurrences)
-    * ``ds:Signature`` (1..3 occurrences)
-
-    """
-
-    dte: dte_data_models.DteDataL1 = dc_field()
-    """
-    DTE of the "cesión".
-
-    AEC doc XML elements:
-    * '...//Cesion//DocumentoCesion//IdDTE//RUTEmisor'
-    * '...//Cesion//DocumentoCesion//IdDTE//TipoDTE'
-    * '...//Cesion//DocumentoCesion//IdDTE//Folio'
-    * '...//Cesion//DocumentoCesion//IdDTE//FchEmis'
-    * '...//Cesion//DocumentoCesion//IdDTE//RUTReceptor'
-    * '...//Cesion//DocumentoCesion//IdDTE//MntTotal'
-
-    RPETC email:
-    * attachment / 'Documento Cedido' / (initial text before ' - Monto Total')
-    * attachment / 'Documento Cedido' / 'Emisor'
-    * attachment / 'Documento Cedido' / 'Receptor'
-    * attachment / 'Documento Cedido' / 'Fecha Emision'
-    """
-
-    seq: int = dc_field()
-    """
-    Sequence number of the "cesión". Must be >= 1.
-
-    AEC doc XML element:
-        '..//Cesion//DocumentoCesion//SeqCesion'
-
-    RPETC email: attachment / 'Cesion' / 'Seq'
-    """
-
-    cedente_rut: Rut = dc_field()
-    """
-    RUT of the "cedente".
-
-    AEC doc XML element:
-        '..//Cesion//DocumentoCesion//Cedente//RUT'
-
-    RPETC email: attachment / 'Cedente' / 'Cedido por' (fraction)
-    """
-
-    cesionario_rut: Rut = dc_field()
-    """
-    RUT of the "cesionario".
-
-    AEC doc XML element:
-        '..//Cesion//DocumentoCesion//Cesionario//RUT'
-
-    RPETC email: attachment / 'Cesionario' / 'Cedido a' (fraction)
-    """
-
-    monto: int = dc_field()
-    """
-    Amount of the "cesión".
-
-    AEC doc XML element:
-        '..//Cesion//DocumentoCesion//MontoCesion'
-
-    RPETC email: attachment / 'Cesion' / 'Monto Cedido'
-    """
-
-    fecha_cesion_dt_naive: datetime = dc_field()
-    """
-    Datetime of "cesión".
-
-    e.g. `2019-03-29T10:18:35` (XML), 2019-03-29 10:18:35 (txt)
-
-    > TimeStamp de la Cesion del DTE.
-
-    AEC doc XML element:
-        '..//Cesion//DocumentoCesion//TmstCesion'
-
-    RPETC email: attachment / 'Cesion' / 'Fecha de la Cesion'
-    """
-
-    ultimo_vencimiento_date: date = dc_field()
-    """
-    Date of "Ultimo Vencimiento".
-
-    e.g. `2019-04-28` (XML), 2019-03-29 10:18:35 (txt)
-
-    AEC doc XML element:
-        '..//Cesion//DocumentoCesion//UltimoVencimiento'
-
-    RPETC email: attachment / 'Cesion' / 'Ultimo Vencimiento'
-    """
-
-    cedente_razon_social: str = dc_field()
-    """
-    "Razón social" (legal name) of the "cedente".
-
-    AEC doc XML element:
-        '..//Cesion//DocumentoCesion//Cedente//RazonSocial'
-
-    RPETC email: attachment / 'Cedente' / 'Cedido por' (fraction)
-    """
-
-    cedente_direccion: str = dc_field()
-    """
-    Address ("Dirección") of the "cedente".
-
-    AEC doc XML element:
-        '..//Cesion//DocumentoCesion//Cedente//Direccion'
-
-    RPETC email: attachment / 'Cedente' / 'Direccion'
-    """
-
-    cedente_email: str = dc_field()
-    """
-    Email address of the "cedente".
-
-    .. warning:: Value may be an invalid email address.
-
-    AEC doc XML element:
-        '..//Cesion//DocumentoCesion//Cedente//eMail'
-
-    RPETC email: attachment / 'Cedente' / 'eMail'
-    """
-
-    # There 1 to 3 XML elements '..//Cesion//DocumentoCesion//Cedente//RUTAutorizado'.
-    #
-    # cedente_persona_autorizada_rut: Rut = dc_field()
-    # """
-    # "Persona Autorizada" by the "cedente" to "Firmar la Transferencia" (RUT).
-    #
-    # .. note:: It might be the "cedente" itself, a "persona natural", etc.
-    #
-    # One of the
-    # > Lista de Personas Autorizadas por el Cedente a Firmar la Transferencia
-    #
-    # AEC doc XML element (1..3 occurrences of 'RUTAutorizado'):
-    #     '..//Cesion//DocumentoCesion//Cedente//RUTAutorizado//RUT'
-    # """
-    #
-    # cedente_persona_autorizada_nombre: str = dc_field()
-    # """
-    # "Persona Autorizada" by the "cedente" to "Firmar la Transferencia" (name).
-    #
-    # .. note:: It might be the "cedente" itself, a "persona natural", etc.
-    #
-    # One of the
-    # > Lista de Personas Autorizadas por el Cedente a Firmar la Transferencia
-    #
-    # AEC doc XML element (1..3 occurrences of 'RUTAutorizado'):
-    #     '..//Cesion//DocumentoCesion//Cedente//RUTAutorizado//Nombre'
-    # """
-
-    cesionario_razon_social: str = dc_field()
-    """
-    "Razón social" (legal name) of the "cesionario".
-
-    AEC doc XML element:
-        '..//Cesion//DocumentoCesion//Cesionario//RazonSocial'
-
-    RPETC email: attachment / 'Cesionario' / 'Cedido a' (fraction)
-    """
-
-    cesionario_direccion: str = dc_field()
-    """
-    Address ("Dirección") of the "cesionario".
-
-    AEC doc XML element:
-        '..//Cesion//DocumentoCesion//Cesionario//Direccion'
-
-    RPETC email: attachment / 'Cesionario' / 'Direccion'
-    """
-
-    cesionario_email: str = dc_field()
-    """
-    Email address of the "cesionario".
-
-    .. warning:: Value may be an invalid email address.
-
-    AEC doc XML element:
-        '..//Cesion//DocumentoCesion//Cesionario//eMail'
-
-    RPETC email: attachment / 'Cesionario' / 'eMail'
-    """
-
-    dte_deudor_email: Optional[str] = dc_field(default=None)
-    """
-    Email address of the "deudor" of the DTE.
-
-    .. warning:: Value may be an invalid email address.
-
-    AEC doc XML element:
-        '..//Cesion//DocumentoCesion//eMailDeudor'
-
-    RPETC email: no.
-    """
-
-    cedente_declaracion_jurada: Optional[str] = dc_field(default=None)
-    """
-    "Declaración Jurada" by the "cedente".
-
-    > Declaracion Jurada de Disponibilidad de Documentacion No Electronica.
-
-    .. note::
-        The RUT and "razón social" of the "deudor" of the DTE are included
-        in the text. However, this field is optional.
-
-    Example:
-        "Se declara bajo juramento que
-        COMERCIALIZADORA INNOVA MOBEL SPA, RUT 76399752-9
-        ha puesto a disposición del cesionario
-        ST CAPITAL S.A., RUT 76389992-6,
-        el o los documentos donde constan los recibos de las mercaderías
-        entregadas o servicios prestados, entregados por parte del deudor
-        de la factura
-        EMPRESAS LA POLAR S.A., RUT 96874030-K,
-        deacuerdo a lo establecido en la Ley N°19.983."
-
-    AEC doc XML element (optional):
-        '..//Cesion//DocumentoCesion//Cedente//DeclaracionJurada'
-
-    RPETC email: attachment / 'Cesion' / 'Declaracion Jurada'
-    **but only whether "declaración jurada" was included or not**,
-    not the "declaración jurada" itself.
-    """
-
-    def __post_init__(self) -> None:
-        """
-        Run validation automatically after setting the fields values.
-
-        :raises TypeError, ValueError:
-
-        """
-        # TODO: validate value of 'fecha_cesion_dt_naive', in relation to the DTE data.
-        # TODO: validate value of 'ultimo_vencimiento_date', in relation to the DTE data.
-
-        if not isinstance(self.dte, dte_data_models.DteDataL1):
-            raise TypeError("Inappropriate type of 'dte'.")
-        if not isinstance(self.seq, int):
-            raise TypeError("Inappropriate type of 'seq'.")
-        if not isinstance(self.cedente_rut, Rut):
-            raise TypeError("Inappropriate type of 'cedente_rut'.")
-        if not isinstance(self.cesionario_rut, Rut):
-            raise TypeError("Inappropriate type of 'cesionario_rut'.")
-        if not isinstance(self.monto, int):
-            raise TypeError("Inappropriate type of 'monto'.")
-        if not isinstance(self.fecha_cesion_dt_naive, datetime):
-            raise TypeError("Inappropriate type of 'fecha_cesion_dt_naive'.")
-        if not isinstance(self.ultimo_vencimiento_date, date):
-            raise TypeError("Inappropriate type of 'ultimo_vencimiento_date'.")
-
-        if not isinstance(self.cedente_razon_social, str):
-            raise TypeError("Inappropriate type of 'cedente_razon_social'.")
-        validate_clean_str(self.cedente_razon_social)
-        validate_non_empty_str(self.cedente_razon_social)
-
-        if not isinstance(self.cedente_direccion, str):
-            raise TypeError("Inappropriate type of 'cedente_direccion'.")
-        validate_clean_str(self.cedente_direccion)
-        validate_non_empty_str(self.cedente_direccion)
-
-        if not isinstance(self.cedente_email, str):
-            raise TypeError("Inappropriate type of 'cedente_email'.")
-        validate_clean_str(self.cedente_email)
-        validate_non_empty_str(self.cedente_email)
-
-        if not isinstance(self.cesionario_razon_social, str):
-            raise TypeError("Inappropriate type of 'cesionario_razon_social'.")
-        validate_clean_str(self.cesionario_razon_social)
-        validate_non_empty_str(self.cesionario_razon_social)
-
-        if not isinstance(self.cesionario_direccion, str):
-            raise TypeError("Inappropriate type of 'cesionario_direccion'.")
-        validate_clean_str(self.cesionario_direccion)
-        validate_non_empty_str(self.cesionario_direccion)
-
-        if not isinstance(self.cesionario_email, str):
-            raise TypeError("Inappropriate type of 'cesionario_email'.")
-        validate_clean_str(self.cesionario_email)
-        validate_non_empty_str(self.cesionario_email)
-
-        if self.dte_deudor_email is not None:
-            if not isinstance(self.dte_deudor_email, str):
-                raise TypeError("Inappropriate type of 'dte_deudor_email'.")
-            validate_clean_str(self.dte_deudor_email)
-            validate_non_empty_str(self.dte_deudor_email)
-        if self.cedente_declaracion_jurada is not None:
-            if not isinstance(self.cedente_declaracion_jurada, str):
-                raise TypeError("Inappropriate type of 'cedente_declaracion_jurada'.")
-            # validate_clean_str(self.cedente_declaracion_jurada)
-            validate_non_empty_str(self.cedente_declaracion_jurada)
-
-        data_models.validate_cesion_seq(self.seq)
-        data_models.validate_cesion_monto(self.monto)
-        dte_data_models.validate_contribuyente_razon_social(self.cedente_razon_social)
-        dte_data_models.validate_contribuyente_razon_social(self.cesionario_razon_social)
-
-    @property
-    def natural_key(self) -> data_models.CesionNaturalKey:
-        return data_models.CesionNaturalKey(dte_key=self.dte.natural_key, seq=self.seq)
+    ###########################################################################
+    # Validators
+    ###########################################################################
+
+    @pydantic.validator('dte')
+    def validate_dte_tipo_dte(cls, v: object) -> object:
+        if isinstance(v, dte_data_models.DteDataL0):
+            data_models.validate_cesion_dte_tipo_dte(v.tipo_dte)
+        return v
+
+    @pydantic.validator('fecha_firma_dt')
+    def validate_datetime_tz_aware(cls, v: object) -> object:
+        if isinstance(v, datetime):
+            data_models.validate_datetime_tz_aware(v)
+        return v
+
+    @pydantic.validator('cesiones')
+    def validate_cesiones_min_items(cls, v: object) -> object:
+        if isinstance(v, Sequence):
+            if len(v) < 1:
+                raise ValueError("must contain at least one item")
+        return v
+
+    @pydantic.validator('cesiones')
+    def validate_cesiones_seq_order(cls, v: object) -> object:
+        if isinstance(v, Sequence):
+            for idx, cesion in enumerate(v, start=1):
+                if cesion.seq != idx:
+                    raise ValueError("items must be ordered according to their 'seq'")
+        return v
+
+    @pydantic.validator('cesiones')
+    def validate_cesiones_monto_cesion_must_not_increase(cls, v: object) -> object:
+        if isinstance(v, Sequence):
+            if len(v) >= 2:
+                previous_cesion: Optional[AecXmlCesionData] = None
+                for cesion in v:
+                    if previous_cesion is not None:
+                        if not (cesion.monto_cesion <= previous_cesion.monto_cesion):
+                            raise ValueError(
+                                "items must have a 'monto_cesion'"
+                                " that does not exceed the previous item's 'monto_cesion'.",
+                            )
+                    previous_cesion = cesion
+
+        return v
+
+    @pydantic.root_validator(skip_on_failure=True)
+    def validate_dte_matches_cesiones_dtes(
+        cls, values: Mapping[str, object],
+    ) -> Mapping[str, object]:
+        dte = values['dte']
+        cesiones = values['cesiones']
+
+        if isinstance(dte, dte_data_models.DteXmlData) and isinstance(cesiones, Sequence):
+            if cesiones:
+                dte_l1 = dte.as_dte_data_l1()
+
+                for cesion in cesiones:
+                    assert isinstance(cesion, AecXmlCesionData)
+                    if cesion.dte != dte_l1:
+                        raise ValueError(f"'dte' of {cesion!r} must match {dte_l1}.")
+
+        return values
+
+    @pydantic.root_validator(skip_on_failure=True)
+    def validate_last_cesion_matches_some_fields(
+        cls, values: Mapping[str, object],
+    ) -> Mapping[str, object]:
+        cesiones = values['cesiones']
+        if isinstance(cesiones, Sequence):
+            if cesiones:
+                last_cesion = cesiones[-1]
+
+                field_validations: Sequence[Tuple[str, str]] = [
+                    # (AecXmlData field, AecXmlCesionData field):
+                    ('fecha_firma_dt', 'fecha_cesion_dt'),
+                    ('cedente_rut', 'cedente_rut'),
+                    ('cesionario_rut', 'cesionario_rut'),
+                ]
+
+                for self_field, last_cesion_field in field_validations:
+                    self_value = values.get(self_field)
+                    last_cesion_value = getattr(last_cesion, last_cesion_field)
+
+                    if self_value != last_cesion_value:
+                        raise ValueError(
+                            f"{last_cesion_field!r} of last 'cesion' must match {self_field!r}:"
+                            f" {last_cesion_value!r} != {self_value!r}.",
+                        )
+
+        return values

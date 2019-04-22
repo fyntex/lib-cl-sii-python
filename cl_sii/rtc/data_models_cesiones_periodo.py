@@ -11,6 +11,7 @@ from cl_sii.dte.constants import TipoDteEnum
 from cl_sii.libs import tz_utils
 from cl_sii.rut import Rut
 
+from . import data_models
 from .constants import TIPO_DTE_CEDIBLES
 
 
@@ -229,10 +230,10 @@ class CesionesPeriodoEntry:
         if not self.monto_cedido >= 0:
             raise ValueError(
                 "Amount 'monto_cedido' must be >= 0.", self.monto_cedido)
-        if not self.monto_cedido <= self.dte_monto_total:
-            raise ValueError(
-                "Amount 'monto_cedido' must be <= 'dte_monto_total'.",
-                self.monto_cedido, self.dte_monto_total)
+        data_models.validate_cesion_and_dte_montos(
+            cesion_value=self.monto_cedido,
+            dte_value=self.dte_monto_total,
+        )
 
         if not isinstance(self.fecha_ultimo_vencimiento, date):
             raise TypeError("Inappropriate type of 'fecha_ultimo_vencimiento'.")
@@ -271,3 +272,26 @@ class CesionesPeriodoEntry:
             raise
 
         return dte_data
+
+    def as_cesion_l2(self) -> data_models.CesionL2:
+        # TODO: Verify that 'CesionesPeriodoEntry.fecha_cesion_dt' and 'CesionL2.fecha_cesion_dt'
+        #  refer to the same timestamp.
+
+        dte = self.as_dte_data_l1()
+
+        return data_models.CesionL2(
+            dte_key=dte.natural_key,
+            seq=None,
+            cedente_rut=self.cedente_rut,
+            cesionario_rut=self.cesionario_rut,
+            fecha_cesion_dt=self.fecha_cesion_dt,
+            monto_cedido=self.monto_cedido,
+            dte_receptor_rut=dte.receptor_rut,
+            dte_fecha_emision=dte.fecha_emision_date,
+            dte_monto_total=dte.monto_total,
+            fecha_ultimo_vencimiento=self.fecha_ultimo_vencimiento,
+            cedente_razon_social=self.cedente_razon_social,
+            cedente_email=self.cedente_email,
+            cesionario_razon_social=self.cesionario_razon_social,
+            cesionario_email=self.cesionario_emails,
+        )
