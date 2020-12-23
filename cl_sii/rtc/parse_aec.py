@@ -11,21 +11,21 @@ Usage:
 ...     xml_doc = xml_utils.parse_untrusted_xml(f.read())
 
 >>> validate_aec_xml(xml_doc)
->>> aec_xml_data = parse_aec_xml_data(xml_doc)
+>>> aec_xml_data = parse_aec_xml(xml_doc)
 """
 
 from __future__ import annotations
 
 import logging
-import os
 from datetime import date, datetime
+from pathlib import Path
 from typing import Sequence
 
 import cl_sii.dte.data_models
 import cl_sii.dte.parse
 from cl_sii.dte.constants import TipoDteEnum
-from cl_sii.dte.parse import DTE_XMLNS_MAP
-from cl_sii.libs import tz_utils, xml_utils
+from cl_sii.dte.parse import DTE_XMLNS_MAP, _text_strip_or_raise
+from cl_sii.libs import crypto_utils, encoding_utils, tz_utils, xml_utils
 from cl_sii.libs.xml_utils import XmlElement
 from cl_sii.rut import Rut
 
@@ -35,13 +35,11 @@ from . import data_models_aec
 logger = logging.getLogger(__name__)
 
 
-_AEC_XML_SCHEMA_PATH = os.path.abspath(
-    os.path.join(
-        os.path.dirname(os.path.dirname(__file__)),
-        'data/ref/factura_electronica/schemas-xml/AEC_v10.xsd',
-    )
-)
-AEC_XML_SCHEMA_OBJ = xml_utils.read_xml_schema(_AEC_XML_SCHEMA_PATH)
+_AEC_XML_SCHEMA_PATH = Path(
+    Path(__file__).parent.parent,
+    Path('data/ref/factura_electronica/schemas-xml/AEC_v10.xsd'),
+).resolve()
+AEC_XML_SCHEMA_OBJ = xml_utils.read_xml_schema(str(_AEC_XML_SCHEMA_PATH))
 """
 XML schema obj for AEC XML document validation.
 
@@ -67,7 +65,7 @@ def validate_aec_xml(xml_doc: XmlElement) -> None:
     xml_utils.validate_xml_doc(AEC_XML_SCHEMA_OBJ, xml_doc)
 
 
-def parse_aec_xml_data(xml_doc: XmlElement) -> data_models_aec.AecXmlData:
+def parse_aec_xml(xml_doc: XmlElement) -> data_models_aec.AecXml:
     """
     Parse data from a "cesión"'s AEC XML doc.
 
@@ -81,8 +79,27 @@ def parse_aec_xml_data(xml_doc: XmlElement) -> data_models_aec.AecXmlData:
 
     aec_em = xml_doc
 
+    ###########################################################################
+    # XML Element Finding
+    ###########################################################################
+
     documento_aec_em = aec_em.find('sii-dte:DocumentoAEC', namespaces=DTE_XMLNS_MAP)
-    # signature_em = aec_em.find('ds:Signature', namespaces=xml_utils.XML_DSIG_NS_MAP)
+
+    signature_over_doc_aec_em = aec_em.find('ds:Signature', namespaces=xml_utils.XML_DSIG_NS_MAP)
+    signature_over_doc_aec_signature_value_em = signature_over_doc_aec_em.find(
+        'ds:SignatureValue', namespaces=xml_utils.XML_DSIG_NS_MAP,
+    )
+    signature_over_doc_aec_key_info_em = signature_over_doc_aec_em.find(
+        'ds:KeyInfo', namespaces=xml_utils.XML_DSIG_NS_MAP,
+    )
+    signature_over_doc_aec_key_info_x509_data_em = signature_over_doc_aec_key_info_em.find(
+        'ds:X509Data', namespaces=xml_utils.XML_DSIG_NS_MAP,
+    )
+    signature_over_doc_aec_key_info_x509_cert_em = (
+        signature_over_doc_aec_key_info_x509_data_em.find(
+            'ds:X509Certificate', namespaces=xml_utils.XML_DSIG_NS_MAP,
+        )
+    )
 
     # This value seems to be worthless (only useful for internal references in the XML doc).
     #   e.g. 'HEF_AEC_T33F170_SEQ2', 'AEC1589423e81824cdcbfd2f0f4496f2dfb'
@@ -99,16 +116,6 @@ def parse_aec_xml_data(xml_doc: XmlElement) -> data_models_aec.AecXmlData:
     mail_contacto_em = caratula_em.find('sii-dte:MailContacto', namespaces=DTE_XMLNS_MAP)
     tmst_firma_envio_em = caratula_em.find('sii-dte:TmstFirmaEnvio', namespaces=DTE_XMLNS_MAP)
 
-    nmb_contacto_str = nmb_contacto_em.text.strip() if nmb_contacto_em is not None else None
-    fono_contacto_str = fono_contacto_em.text.strip() if fono_contacto_em is not None else None
-    mail_contacto_str = mail_contacto_em.text.strip() if mail_contacto_em is not None else None
-    rut_cedente_value = Rut(rut_cedente_em.text)
-    rut_cesionario_value = Rut(rut_cesionario_em.text)
-    tmst_firma_envio_value = tz_utils.convert_naive_dt_to_tz_aware(
-        dt=datetime.fromisoformat(tmst_firma_envio_em.text),
-        tz=data_models_aec.AecXmlData.DATETIME_FIELDS_TZ,
-    )
-
     # Cesiones
     # - 'DTECedido'
     dte_cedido_em = cesiones_em.find(
@@ -120,6 +127,30 @@ def parse_aec_xml_data(xml_doc: XmlElement) -> data_models_aec.AecXmlData:
     # dte_documento_em = dte_em.find(
     #     'sii-dte:Documento', namespaces=DTE_XMLNS_MAP)
 
+    # Cesiones
+    # - Signature over 'DocumentoDTECedido'
+    # signature_over_documento_dte_cedido_em = dte_cedido_em.find(
+    #     'ds:Signature', namespaces=xml_utils.XML_DSIG_NS_MAP,
+    # )
+    # signature_over_documento_dte_cedido_signature_value_em = (
+    #     signature_over_documento_dte_cedido_em.find(
+    #         'ds:SignatureValue', namespaces=xml_utils.XML_DSIG_NS_MAP,
+    #     )
+    # )
+    # signature_over_documento_dte_cedido_key_info_em = signature_over_documento_dte_cedido_em.find(
+    #     'ds:KeyInfo', namespaces=xml_utils.XML_DSIG_NS_MAP,
+    # )
+    # signature_over_documento_dte_cedido_key_info_x509_data_em = (
+    #     signature_over_documento_dte_cedido_key_info_em.find(
+    #         'ds:X509Data', namespaces=xml_utils.XML_DSIG_NS_MAP,
+    #     )
+    # )
+    # signature_over_documento_dte_cedido_key_info_x509_cert_em = (
+    #     signature_over_documento_dte_cedido_key_info_x509_data_em.find(
+    #         'ds:X509Certificate', namespaces=xml_utils.XML_DSIG_NS_MAP,
+    #     )
+    # )
+
     # This value seems to be worthless (only useful for internal references in the XML doc).
     #   e.g. 'DTE6e0d95997db9489aa4cdd768a45852f6', 'DTE5716484782d745b6822257822a3536d1'
     # documento_dte_cedido_em_id = documento_dte_cedido_em.attrib['ID']
@@ -127,39 +158,94 @@ def parse_aec_xml_data(xml_doc: XmlElement) -> data_models_aec.AecXmlData:
     #   e.g. 'MiPE76354771-13419', 'MiPE76399752-6048'
     # dte_documento_id = dte_documento_em.attrib['ID']
 
-    cl_sii.dte.parse.validate_dte_xml(dte_em)
-    dte_data = cl_sii.dte.parse.parse_dte_xml(dte_em)
-
     # Cesiones
     # - 'Cesion' (1..N occurrences)
     cesion_em_list: Sequence[XmlElement] = cesiones_em.findall(
-        'sii-dte:Cesion', namespaces=DTE_XMLNS_MAP)
+        'sii-dte:Cesion', namespaces=DTE_XMLNS_MAP,
+    )
     assert len(cesion_em_list) >= 1
 
-    aec_xml_cesion_data_list: Sequence[data_models_aec.AecXmlCesionData]
-    aec_xml_cesion_data_list = [
-        _parse_aec_xml_cesion_data(cesion_em)
+    ###########################################################################
+    # Values Parsing
+    ###########################################################################
+
+    # Signature over 'DocumentoAEC'
+    signature_over_doc_aec_signature_value = encoding_utils.decode_base64_strict(
+        _text_strip_or_raise(signature_over_doc_aec_signature_value_em),
+    )
+    signature_over_doc_aec_key_info_x509_cert_der = encoding_utils.decode_base64_strict(
+        _text_strip_or_raise(signature_over_doc_aec_key_info_x509_cert_em),
+    )
+
+    # Caratula
+    nmb_contacto_str = nmb_contacto_em.text.strip() if nmb_contacto_em is not None else None
+    fono_contacto_str = fono_contacto_em.text.strip() if fono_contacto_em is not None else None
+    mail_contacto_str = mail_contacto_em.text.strip() if mail_contacto_em is not None else None
+    rut_cedente_value = Rut(rut_cedente_em.text)
+    rut_cesionario_value = Rut(rut_cesionario_em.text)
+    tmst_firma_envio_value = tz_utils.convert_naive_dt_to_tz_aware(
+        dt=datetime.fromisoformat(tmst_firma_envio_em.text),
+        tz=data_models_aec.AecXml.DATETIME_FIELDS_TZ,
+    )
+
+    # Cesiones
+    # - 'DTECedido'
+    cl_sii.dte.parse.validate_dte_xml(dte_em)
+    dte = cl_sii.dte.parse.parse_dte_xml(dte_em)
+
+    # Cesiones
+    # - Signature over 'DocumentoDTECedido'
+    # signature_over_documento_dte_cedido_signature_value = encoding_utils.decode_base64_strict(
+    #     _text_strip_or_raise(signature_over_documento_dte_cedido_signature_value_em),
+    # )
+    # signature_over_documento_dte_cedido_key_info_x509_cert_der = (
+    #     encoding_utils.decode_base64_strict(
+    #         _text_strip_or_raise(signature_over_documento_dte_cedido_key_info_x509_cert_em),
+    #     )
+    # )
+
+    # Cesiones
+    # - 'Cesion' (1..N occurrences)
+    aec_xml_cesion_list: Sequence[data_models_aec.CesionAecXml]
+    aec_xml_cesion_list = [
+        _parse_aec_xml_cesion(cesion_em)
         for cesion_em in cesion_em_list
     ]
 
-    return data_models_aec.AecXmlData(
-        dte=dte_data,
+    # TODO: Remove assertions after the variables are passed as arguments to
+    #  'data_models_aec.AecXml'.
+    assert isinstance(signature_over_doc_aec_signature_value, bytes)
+    assert isinstance(signature_over_doc_aec_key_info_x509_cert_der, bytes)
+    assert isinstance(
+        crypto_utils.load_der_x509_cert(signature_over_doc_aec_key_info_x509_cert_der),
+        crypto_utils.X509Cert,
+    )
+
+    return data_models_aec.AecXml(
+        dte=dte,
         cedente_rut=rut_cedente_value,
         cesionario_rut=rut_cesionario_value,
         fecha_firma_dt=tmst_firma_envio_value,
-        cesiones=aec_xml_cesion_data_list,
+        signature_value=None,  # TODO: Don't use until signature tests are implemented.
+        signature_x509_cert_der=None,  # TODO: Don't use until signature tests are implemented.
+        cesiones=aec_xml_cesion_list,
         contacto_nombre=nmb_contacto_str,
         contacto_telefono=fono_contacto_str,
         contacto_email=mail_contacto_str,
     )
 
 
-def _parse_aec_xml_cesion_data(xml_em: XmlElement) -> data_models_aec.AecXmlCesionData:
+def _parse_aec_xml_cesion(xml_em: XmlElement) -> data_models_aec.CesionAecXml:
     """
     Parse data from a ``sii-dte:Cesion`` element in an AEC XML file.
 
     An AEC XML doc includes one or more ``sii-dte:Cesion`` XML elements.
     """
+
+    ###########################################################################
+    # XML Element Finding / Values Parsing
+    ###########################################################################
+
     documento_cesion_em = xml_em.find('sii-dte:DocumentoCesion', namespaces=DTE_XMLNS_MAP)
     # signature_em = xml_em.find('ds:Signature', namespaces=xml_utils.XML_DSIG_NS_MAP)
 
@@ -190,7 +276,7 @@ def _parse_aec_xml_cesion_data(xml_em: XmlElement) -> data_models_aec.AecXmlCesi
     ultimo_vencimiento_value = date.fromisoformat(ultimo_vencimiento_em.text)
     tmst_cesion_value = tz_utils.convert_naive_dt_to_tz_aware(
         dt=datetime.fromisoformat(tmst_cesion_em.text),
-        tz=data_models_aec.AecXmlCesionData.DATETIME_FIELDS_TZ,
+        tz=data_models_aec.CesionAecXml.DATETIME_FIELDS_TZ,
     )
     deudor_email = deudor_email_em.text.strip() if deudor_email_em is not None else None
 
@@ -244,7 +330,7 @@ def _parse_aec_xml_cesion_data(xml_em: XmlElement) -> data_models_aec.AecXmlCesi
     cesionario_email = cesionario_em.find(
         'sii-dte:eMail', namespaces=DTE_XMLNS_MAP).text.strip()
 
-    aec_cesiones_cesion_struct = data_models_aec.AecXmlCesionData(
+    aec_cesiones_cesion_struct = data_models_aec.CesionAecXml(
         dte=cesion_dte_struct,
         seq=seq_cesion_value,
         cedente_rut=cedente_rut,

@@ -29,9 +29,12 @@ TIPO_DTE_CEDIBLES: FrozenSet[TipoDteEnum] = frozenset({
 # Cesion Fields / "Monto Cedido"
 ###############################################################################
 
+# Amount of the "cesión".
+#
 # Ref:
 #   - https://github.com/fyntex/lib-cl-sii-api-python/blob/v0.4.4/cl_sii_api/rtc/data_models.py#L231
-#   - Formato Archivo Electrónico de Cesión (AEC) 2013-02-11 (retrieved on 2019-08-12) - SII Chile
+#   - Document "Formato Archivo Electrónico de Cesión 2013-02-11" (retrieved on 2019-08-12)
+#     (https://www.sii.cl/factura_electronica/cesion.pdf)
 CESION_MONTO_CEDIDO_FIELD_MIN_VALUE: int = 0
 CESION_MONTO_CEDIDO_FIELD_MAX_VALUE: int = DTE_MONTO_TOTAL_FIELD_MAX_VALUE
 
@@ -40,8 +43,16 @@ CESION_MONTO_CEDIDO_FIELD_MAX_VALUE: int = DTE_MONTO_TOTAL_FIELD_MAX_VALUE
 # Cesion Fields / "Secuencia"
 ###############################################################################
 
-# Ref:
-#   - Formato Archivo Electrónico de Cesión (AEC) 2013-02-11 (retrieved on 2019-08-12) - SII Chile
+# Sequence number of the "cesión"
+#
+# > Campo: Número de Cesión
+# > Descripción: Secuencia de la cesión
+# > Tipo: NUM
+# > Validación: 1 hasta 40
+#
+# Source:
+#   Document "Formato Archivo Electrónico de Cesión 2013-02-11" (retrieved on 2019-08-12)
+#   (https://www.sii.cl/factura_electronica/cesion.pdf)
 CESION_SEQUENCE_NUMBER_MIN_VALUE: int = 1
 CESION_SEQUENCE_NUMBER_MAX_VALUE: int = 40
 

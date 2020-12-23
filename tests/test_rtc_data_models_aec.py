@@ -8,15 +8,19 @@ from cl_sii.dte.data_models import DteDataL1, DteNaturalKey, DteXmlData
 from cl_sii.libs import encoding_utils
 from cl_sii.libs import tz_utils
 from cl_sii.rtc.data_models import CesionL2, CesionNaturalKey, CesionAltNaturalKey
-from cl_sii.rtc.data_models_aec import AecXmlCesionData, AecXmlData
+from cl_sii.rtc.data_models_aec import CesionAecXml, AecXml
 from cl_sii.rut import Rut
 
 from .utils import read_test_file_bytes
 
 
-class AecXmlCesionDataTest(unittest.TestCase):
+class CesionAecXmlTest(unittest.TestCase):
+    """
+    Tests for :class:`CesionAecXml`.
+    """
+
     def _set_obj_1(self) -> None:
-        obj = AecXmlCesionData(
+        obj = CesionAecXml(
             dte=DteDataL1(
                 emisor_rut=Rut('76354771-K'),
                 tipo_dte=TipoDteEnum.FACTURA_ELECTRONICA,
@@ -31,7 +35,7 @@ class AecXmlCesionDataTest(unittest.TestCase):
             monto_cesion=2996301,
             fecha_cesion_dt=tz_utils.convert_naive_dt_to_tz_aware(
                 dt=datetime(2019, 4, 1, 10, 22, 2),
-                tz=AecXmlCesionData.DATETIME_FIELDS_TZ,
+                tz=CesionAecXml.DATETIME_FIELDS_TZ,
             ),
             fecha_ultimo_vencimiento=date(2019, 5, 1),
             cedente_razon_social='SERVICIOS BONILLA Y LOPEZ Y COMPAÑIA LIMITADA',
@@ -50,12 +54,12 @@ class AecXmlCesionDataTest(unittest.TestCase):
                 'deacuerdo a lo establecido en la Ley N°19.983.'
             ),
         )
-        self.assertIsInstance(obj, AecXmlCesionData)
+        self.assertIsInstance(obj, CesionAecXml)
 
         self.obj_1 = obj
 
     def _set_obj_2(self) -> None:
-        obj = AecXmlCesionData(
+        obj = CesionAecXml(
             dte=DteDataL1(
                 emisor_rut=Rut('76354771-K'),
                 tipo_dte=TipoDteEnum.FACTURA_ELECTRONICA,
@@ -70,7 +74,7 @@ class AecXmlCesionDataTest(unittest.TestCase):
             monto_cesion=2996301,
             fecha_cesion_dt=tz_utils.convert_naive_dt_to_tz_aware(
                 dt=datetime(2019, 4, 5, 12, 57, 32),
-                tz=AecXmlCesionData.DATETIME_FIELDS_TZ,
+                tz=CesionAecXml.DATETIME_FIELDS_TZ,
             ),
             fecha_ultimo_vencimiento=date(2019, 5, 1),
             cedente_razon_social='ST CAPITAL S.A.',
@@ -87,13 +91,13 @@ class AecXmlCesionDataTest(unittest.TestCase):
                 'PELAMBRES, RUT 96790240-3.'
             ),
         )
-        self.assertIsInstance(obj, AecXmlCesionData)
+        self.assertIsInstance(obj, CesionAecXml)
 
         self.obj_2 = obj
 
     def test_create_new_empty_instance(self) -> None:
         with self.assertRaises(TypeError):
-            AecXmlCesionData()
+            CesionAecXml()
 
     def test_natural_key(self) -> None:
         self._set_obj_1()
@@ -134,7 +138,10 @@ class AecXmlCesionDataTest(unittest.TestCase):
             ),
             cedente_rut=Rut('76354771-K'),
             cesionario_rut=Rut('76389992-6'),
-            fecha_cesion_dt=datetime.fromisoformat('2019-04-01T13:22:02+00:00'),
+            fecha_cesion_dt=tz_utils.convert_naive_dt_to_tz_aware(
+                dt=datetime(2019, 4, 1, 10, 22),
+                tz=CesionAltNaturalKey.DATETIME_FIELDS_TZ,
+            ),
         )
         self.assertEqual(obj.alt_natural_key, expected_output)
 
@@ -147,12 +154,19 @@ class AecXmlCesionDataTest(unittest.TestCase):
             ),
             cedente_rut=Rut('76389992-6'),
             cesionario_rut=Rut('76598556-0'),
-            fecha_cesion_dt=datetime.fromisoformat('2019-04-05T15:57:32+00:00'),
+            fecha_cesion_dt=tz_utils.convert_naive_dt_to_tz_aware(
+                dt=datetime(2019, 4, 5, 12, 57),
+                tz=CesionAltNaturalKey.DATETIME_FIELDS_TZ,
+            ),
         )
         self.assertEqual(obj.alt_natural_key, expected_output)
 
 
-class AecXmlDataTest(unittest.TestCase):
+class AecXmlTest(unittest.TestCase):
+    """
+    Tests for :class:`AecXml`.
+    """
+
     def _set_obj_1(self) -> None:
         obj_dte_signature_value = encoding_utils.decode_base64_strict(
             read_test_file_bytes(
@@ -183,7 +197,7 @@ class AecXmlDataTest(unittest.TestCase):
             receptor_email=None,
         )
 
-        obj_cesion_1 = AecXmlCesionData(
+        obj_cesion_1 = CesionAecXml(
             dte=DteDataL1(
                 emisor_rut=Rut('76354771-K'),
                 tipo_dte=TipoDteEnum.FACTURA_ELECTRONICA,
@@ -198,7 +212,7 @@ class AecXmlDataTest(unittest.TestCase):
             monto_cesion=2996301,
             fecha_cesion_dt=tz_utils.convert_naive_dt_to_tz_aware(
                 dt=datetime(2019, 4, 1, 10, 22, 2),
-                tz=AecXmlCesionData.DATETIME_FIELDS_TZ,
+                tz=CesionAecXml.DATETIME_FIELDS_TZ,
             ),
             fecha_ultimo_vencimiento=date(2019, 5, 1),
             cedente_razon_social='SERVICIOS BONILLA Y LOPEZ Y COMPAÑIA LIMITADA',
@@ -218,7 +232,7 @@ class AecXmlDataTest(unittest.TestCase):
             ),
         )
 
-        obj_cesion_2 = AecXmlCesionData(
+        obj_cesion_2 = CesionAecXml(
             dte=DteDataL1(
                 emisor_rut=Rut('76354771-K'),
                 tipo_dte=TipoDteEnum.FACTURA_ELECTRONICA,
@@ -233,7 +247,7 @@ class AecXmlDataTest(unittest.TestCase):
             monto_cesion=2996301,
             fecha_cesion_dt=tz_utils.convert_naive_dt_to_tz_aware(
                 dt=datetime(2019, 4, 5, 12, 57, 32),
-                tz=AecXmlCesionData.DATETIME_FIELDS_TZ,
+                tz=CesionAecXml.DATETIME_FIELDS_TZ,
             ),
             fecha_ultimo_vencimiento=date(2019, 5, 1),
             cedente_razon_social='ST CAPITAL S.A.',
@@ -251,14 +265,16 @@ class AecXmlDataTest(unittest.TestCase):
             ),
         )
 
-        obj = AecXmlData(
+        obj = AecXml(
             dte=obj_dte,
             cedente_rut=Rut('76389992-6'),
             cesionario_rut=Rut('76598556-0'),
             fecha_firma_dt=tz_utils.convert_naive_dt_to_tz_aware(
                 dt=datetime(2019, 4, 5, 12, 57, 32),
-                tz=AecXmlData.DATETIME_FIELDS_TZ,
+                tz=AecXml.DATETIME_FIELDS_TZ,
             ),
+            signature_value=None,  # TODO
+            signature_x509_cert_der=None,  # TODO
             cesiones=[
                 obj_cesion_1,
                 obj_cesion_2,
@@ -267,7 +283,7 @@ class AecXmlDataTest(unittest.TestCase):
             contacto_telefono=None,
             contacto_email='APrat@Financiaenlinea.com',
         )
-        self.assertIsInstance(obj, AecXmlData)
+        self.assertIsInstance(obj, AecXml)
 
         self.obj_1 = obj
         self.obj_1_dte = obj_dte
@@ -276,7 +292,7 @@ class AecXmlDataTest(unittest.TestCase):
 
     def test_create_new_empty_instance(self) -> None:
         with self.assertRaises(TypeError):
-            AecXmlData()
+            AecXml()
 
     def test_natural_key(self) -> None:
         self._set_obj_1()
@@ -304,7 +320,10 @@ class AecXmlDataTest(unittest.TestCase):
             ),
             cedente_rut=Rut('76389992-6'),
             cesionario_rut=Rut('76598556-0'),
-            fecha_cesion_dt=datetime.fromisoformat('2019-04-05T12:57:32-03:00'),
+            fecha_cesion_dt=tz_utils.convert_naive_dt_to_tz_aware(
+                dt=datetime(2019, 4, 5, 12, 57),
+                tz=CesionAltNaturalKey.DATETIME_FIELDS_TZ,
+            ),
         )
         self.assertEqual(obj.alt_natural_key, expected_output)
 
@@ -336,9 +355,15 @@ class AecXmlDataTest(unittest.TestCase):
             seq=2,
             cedente_rut=Rut('76389992-6'),
             cesionario_rut=Rut('76598556-0'),
-            fecha_cesion_dt=datetime.fromisoformat('2019-04-05T12:57:32-03:00'),
+            fecha_cesion_dt=tz_utils.convert_naive_dt_to_tz_aware(
+                dt=datetime(2019, 4, 5, 12, 57, 32),
+                tz=CesionL2.DATETIME_FIELDS_TZ,
+            ),
             monto_cedido=2996301,
-            fecha_firma_dt=datetime.fromisoformat('2019-04-05T12:57:32-03:00'),
+            fecha_firma_dt=tz_utils.convert_naive_dt_to_tz_aware(
+                dt=datetime(2019, 4, 5, 12, 57, 32),
+                tz=CesionL2.DATETIME_FIELDS_TZ,
+            ),
             dte_receptor_rut=Rut('96790240-3'),
             dte_fecha_emision=date(2019, 4, 1),
             dte_monto_total=2996301,

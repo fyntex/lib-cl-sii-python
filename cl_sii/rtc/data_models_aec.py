@@ -27,7 +27,7 @@ from . import data_models
         min_anystr_length=1,
     ))
 )
-class AecXmlCesionData:
+class CesionAecXml:
     """
     Data in XML element ``sii-dte:Cesion`` in an AEC XML doc.
 
@@ -303,9 +303,9 @@ class AecXmlCesionData:
         return v
 
     @pydantic.validator('fecha_cesion_dt')
-    def validate_datetime_tz_aware(cls, v: object) -> object:
+    def validate_datetime_tz(cls, v: object) -> object:
         if isinstance(v, datetime):
-            data_models.validate_datetime_tz_aware(v)
+            tz_utils.validate_dt_tz(v, cls.DATETIME_FIELDS_TZ)
         return v
 
     @pydantic.root_validator(skip_on_failure=True)
@@ -359,7 +359,7 @@ class AecXmlCesionData:
         min_anystr_length=1,
     ))
 )
-class AecXmlData:
+class AecXml:
     """
     Data in a "cesión"'s AEC XML doc.
 
@@ -448,7 +448,29 @@ class AecXmlData:
     RPETC email: attachment / 'Cesion' / 'Fecha de la Cesion'
     """
 
-    cesiones: Sequence[AecXmlCesionData]
+    signature_value: Optional[bytes] = dataclasses.field(repr=False)
+    """
+    AEC's digital signature's value (raw bytes, without base64 encoding).
+
+    Signature is over AEC doc XML element: 'DocumentoAEC'
+
+    AEC doc XML element: 'Signature/SignatureValue'
+    """
+
+    signature_x509_cert_der: Optional[bytes] = dataclasses.field(repr=False)
+    """
+    AEC's digital signature's DER-encoded X.509 certificate.
+
+    Signature is over AEC doc XML element: 'DocumentoAEC'
+
+    AEC doc XML element: 'Signature/KeyInfo/X509Data/X509Certificate'
+
+    .. seealso::
+        Functions :func:`cl_sii.libs.crypto_utils.load_der_x509_cert`
+        and :func:`cl_sii.libs.crypto_utils.x509_cert_der_to_pem`.
+    """
+
+    cesiones: Sequence[CesionAecXml]
     """
     List of structs for ``sii-dte:Cesion`` XML elements.
 
@@ -493,7 +515,7 @@ class AecXmlData:
     """
 
     @property
-    def _last_cesion(self) -> AecXmlCesionData:
+    def _last_cesion(self) -> CesionAecXml:
         return self.cesiones[-1]
 
     @property
@@ -640,9 +662,9 @@ class AecXmlData:
         return v
 
     @pydantic.validator('fecha_firma_dt')
-    def validate_datetime_tz_aware(cls, v: object) -> object:
+    def validate_datetime_tz(cls, v: object) -> object:
         if isinstance(v, datetime):
-            data_models.validate_datetime_tz_aware(v)
+            tz_utils.validate_dt_tz(v, cls.DATETIME_FIELDS_TZ)
         return v
 
     @pydantic.validator('cesiones')
@@ -664,7 +686,7 @@ class AecXmlData:
     def validate_cesiones_monto_cesion_must_not_increase(cls, v: object) -> object:
         if isinstance(v, Sequence):
             if len(v) >= 2:
-                previous_cesion: Optional[AecXmlCesionData] = None
+                previous_cesion: Optional[CesionAecXml] = None
                 for cesion in v:
                     if previous_cesion is not None:
                         if not (cesion.monto_cesion <= previous_cesion.monto_cesion):
@@ -688,7 +710,7 @@ class AecXmlData:
                 dte_l1 = dte.as_dte_data_l1()
 
                 for cesion in cesiones:
-                    assert isinstance(cesion, AecXmlCesionData)
+                    assert isinstance(cesion, CesionAecXml)
                     if cesion.dte != dte_l1:
                         raise ValueError(f"'dte' of {cesion!r} must match {dte_l1}.")
 
@@ -698,17 +720,17 @@ class AecXmlData:
     def validate_last_cesion_matches_some_fields(
         cls, values: Mapping[str, object],
     ) -> Mapping[str, object]:
+        field_validations: Sequence[Tuple[str, str]] = [
+            # (AecXml field, CesionAecXml field):
+            ('fecha_firma_dt', 'fecha_cesion_dt'),
+            ('cedente_rut', 'cedente_rut'),
+            ('cesionario_rut', 'cesionario_rut'),
+        ]
+
         cesiones = values['cesiones']
         if isinstance(cesiones, Sequence):
             if cesiones:
                 last_cesion = cesiones[-1]
-
-                field_validations: Sequence[Tuple[str, str]] = [
-                    # (AecXmlData field, AecXmlCesionData field):
-                    ('fecha_firma_dt', 'fecha_cesion_dt'),
-                    ('cedente_rut', 'cedente_rut'),
-                    ('cesionario_rut', 'cesionario_rut'),
-                ]
 
                 for self_field, last_cesion_field in field_validations:
                     self_value = values.get(self_field)
@@ -719,5 +741,23 @@ class AecXmlData:
                             f"{last_cesion_field!r} of last 'cesion' must match {self_field!r}:"
                             f" {last_cesion_value!r} != {self_value!r}.",
                         )
+
+        return values
+
+    @pydantic.root_validator
+    def validate_signature_value_and_signature_x509_cert_der_may_only_be_none_together(
+        cls, values: Mapping[str, object],
+    ) -> Mapping[str, object]:
+        signature_value = values.get('signature_value')
+        signature_x509_cert_der = values.get('signature_x509_cert_der')
+
+        if not (
+            (signature_value is None and signature_x509_cert_der is None)
+            or (signature_value is not None and signature_x509_cert_der is not None)
+        ):
+            raise TypeError(
+                "'signature_value' and 'signature_x509_cert_der'"
+                " must either both be None or both be not None."
+            )
 
         return values

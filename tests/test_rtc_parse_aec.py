@@ -5,73 +5,109 @@ from datetime import date, datetime
 
 from cl_sii.dte.data_models import DteDataL1, DteXmlData
 from cl_sii.dte.constants import TipoDteEnum
+from cl_sii.dte.parse import DTE_XMLNS
 from cl_sii.libs import encoding_utils
 from cl_sii.libs import tz_utils
 from cl_sii.libs import xml_utils
 from cl_sii.rut import Rut
 
-from cl_sii.rtc.data_models_aec import AecXmlCesionData, AecXmlData
-from cl_sii.rtc.parse_aec import parse_aec_xml_data, validate_aec_xml
+from cl_sii.rtc.data_models_aec import CesionAecXml, AecXml
+from cl_sii.rtc.parse_aec import AEC_XML_SCHEMA_OBJ, parse_aec_xml, validate_aec_xml
 
 from .utils import read_test_file_bytes
 
 
-_TEST_AEC_1_FILE_PATH = 'tests/test_data/sii-rtc/AEC--76354771-K--33--170--SEQ-2.xml'
-_TEST_AEC_2_FILE_PATH = 'tests/test_data/sii-rtc/AEC--76399752-9--33--25568--SEQ-1.xml'
-
-
 class OthersTest(unittest.TestCase):
+    @unittest.skip("TODO: Implement for 'AEC_XML_SCHEMA_OBJ'.")
     def test_AEC_XML_SCHEMA_OBJ(self):
-        pass
+        self.assertIsNotNone(AEC_XML_SCHEMA_OBJ)
 
 
-class FunctionsTest(unittest.TestCase):
+class FunctionValidateAecXmlTest(unittest.TestCase):
+    """
+    Tests for validation functions from ``parse_aec``.
+    """
+
     @classmethod
     def setUpClass(cls) -> None:
         super().setUpClass()
 
-        cls.aec_1_xml_bytes = read_test_file_bytes(
+        cls.aec_1_xml_bytes: bytes = read_test_file_bytes(
             'test_data/sii-rtc/AEC--76354771-K--33--170--SEQ-2.xml',
         )
-        cls.aec_2_xml_bytes = read_test_file_bytes(
+        cls.aec_2_xml_bytes: bytes = read_test_file_bytes(
             'test_data/sii-rtc/AEC--76399752-9--33--25568--SEQ-1.xml',
         )
 
-        cls.aec_1_dte_cert_der_bytes = read_test_file_bytes(
+    def test_validate_aec_xml_ok_1(self) -> None:
+        xml_doc = xml_utils.parse_untrusted_xml(self.aec_1_xml_bytes)
+        try:
+            validate_aec_xml(xml_doc)
+        except xml_utils.XmlSchemaDocValidationError as exc:
+            self.fail(f'{exc.__class__.__name__} raised')
+
+        expected_xml_root_tag = '{%s}AEC' % DTE_XMLNS
+        self.assertEqual(xml_doc.getroottree().getroot().tag, expected_xml_root_tag)
+
+    def test_validate_aec_xml_ok_2(self) -> None:
+        xml_doc = xml_utils.parse_untrusted_xml(self.aec_2_xml_bytes)
+        try:
+            validate_aec_xml(xml_doc)
+        except xml_utils.XmlSchemaDocValidationError as exc:
+            self.fail(f'{exc.__class__.__name__} raised')
+
+        expected_xml_root_tag = '{%s}AEC' % DTE_XMLNS
+        self.assertEqual(xml_doc.getroottree().getroot().tag, expected_xml_root_tag)
+
+    @unittest.skip("TODO: Implement for 'validate_aec_xml'.")
+    def test_validate_aec_xml_fail(self) -> None:
+        self.assertIsNotNone(validate_aec_xml)
+
+
+class FunctionParseAecXmlTest(unittest.TestCase):
+    """
+    Tests for parsing functions from ``parse_aec``.
+    """
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        super().setUpClass()
+
+        cls.aec_1_xml_bytes: bytes = read_test_file_bytes(
+            'test_data/sii-rtc/AEC--76354771-K--33--170--SEQ-2.xml',
+        )
+        cls.aec_2_xml_bytes: bytes = read_test_file_bytes(
+            'test_data/sii-rtc/AEC--76399752-9--33--25568--SEQ-1.xml',
+        )
+
+        # TODO
+        # cls.aec_1_signature_value: bytes = encoding_utils.decode_base64_strict('Not Implemented')
+        # cls.aec_2_signature_value: bytes = encoding_utils.decode_base64_strict('Not Implemented')
+
+        # TODO
+        # cls.aec_1_cert_der_bytes: bytes = read_test_file_bytes('test_data/Not-Implemented.der')
+        # cls.aec_2_cert_der_bytes: bytes = read_test_file_bytes('test_data/Not-Implemented.der')
+
+        cls.aec_1_dte_cert_der_bytes: bytes = read_test_file_bytes(
             'test_data/sii-crypto/DTE--76354771-K--33--170-cert.der',
         )
-        cls.aec_2_dte_cert_der_bytes = read_test_file_bytes(
+        cls.aec_2_dte_cert_der_bytes: bytes = read_test_file_bytes(
             'test_data/sii-crypto/DTE--76399752-9--33--25568-cert.der',
         )
 
-        cls.aec_1_dte_signature_value = encoding_utils.decode_base64_strict(
+        cls.aec_1_dte_signature_value: bytes = encoding_utils.decode_base64_strict(
             read_test_file_bytes(
                 'test_data/sii-crypto/DTE--76354771-K--33--170-signature-value-base64.txt',
             ),
         )
-        cls.aec_2_dte_signature_value = encoding_utils.decode_base64_strict(
+        cls.aec_2_dte_signature_value: bytes = encoding_utils.decode_base64_strict(
             read_test_file_bytes(
                 'test_data/sii-crypto/DTE--76399752-9--33--25568-signature-value-base64.txt',
             ),
         )
 
-    def test_validate_aec_xml_ok_1(self) -> None:
-        with open(_TEST_AEC_1_FILE_PATH, mode='rb') as f:
-            xml_doc_1 = xml_utils.parse_untrusted_xml(f.read())
-
-        self.assertIsNone(validate_aec_xml(xml_doc_1))
-
-    def test_validate_aec_xml_ok_2(self) -> None:
-        with open(_TEST_AEC_2_FILE_PATH, mode='rb') as f:
-            xml_doc_2 = xml_utils.parse_untrusted_xml(f.read())
-
-        self.assertIsNone(validate_aec_xml(xml_doc_2))
-
-    def test_validate_aec_xml_fail(self) -> None:
-        pass  # TODO: implement for 'validate_aec_xml'
-
-    def test_parse_aec_xml_data_ok_1(self) -> None:
-        expected_output = AecXmlData(
+    def test_parse_aec_xml_ok_1(self) -> None:
+        expected_output = AecXml(
             dte=DteXmlData(
                 emisor_rut=Rut('76354771-K'),
                 tipo_dte=TipoDteEnum.FACTURA_ELECTRONICA,
@@ -96,10 +132,12 @@ class FunctionsTest(unittest.TestCase):
             cesionario_rut=Rut('76598556-0'),
             fecha_firma_dt=tz_utils.convert_naive_dt_to_tz_aware(
                 dt=datetime(2019, 4, 5, 12, 57, 32),
-                tz=AecXmlData.DATETIME_FIELDS_TZ,
+                tz=AecXml.DATETIME_FIELDS_TZ,
             ),
+            signature_value=None,  # TODO
+            signature_x509_cert_der=None,  # TODO
             cesiones=[
-                AecXmlCesionData(
+                CesionAecXml(
                     dte=DteDataL1(
                         emisor_rut=Rut('76354771-K'),
                         tipo_dte=TipoDteEnum.FACTURA_ELECTRONICA,
@@ -114,7 +152,7 @@ class FunctionsTest(unittest.TestCase):
                     monto_cesion=2996301,
                     fecha_cesion_dt=tz_utils.convert_naive_dt_to_tz_aware(
                         dt=datetime(2019, 4, 1, 10, 22, 2),
-                        tz=AecXmlCesionData.DATETIME_FIELDS_TZ,
+                        tz=CesionAecXml.DATETIME_FIELDS_TZ,
                     ),
                     fecha_ultimo_vencimiento=date(2019, 5, 1),
                     cedente_razon_social='SERVICIOS BONILLA Y LOPEZ Y COMPAÑIA LIMITADA',
@@ -133,7 +171,7 @@ class FunctionsTest(unittest.TestCase):
                         'deacuerdo a lo establecido en la Ley N°19.983.'
                     ),
                 ),
-                AecXmlCesionData(
+                CesionAecXml(
                     dte=DteDataL1(
                         emisor_rut=Rut('76354771-K'),
                         tipo_dte=TipoDteEnum.FACTURA_ELECTRONICA,
@@ -148,7 +186,7 @@ class FunctionsTest(unittest.TestCase):
                     monto_cesion=2996301,
                     fecha_cesion_dt=tz_utils.convert_naive_dt_to_tz_aware(
                         dt=datetime(2019, 4, 5, 12, 57, 32),
-                        tz=AecXmlCesionData.DATETIME_FIELDS_TZ,
+                        tz=CesionAecXml.DATETIME_FIELDS_TZ,
                     ),
                     fecha_ultimo_vencimiento=date(2019, 5, 1),
                     cedente_razon_social='ST CAPITAL S.A.',
@@ -173,12 +211,12 @@ class FunctionsTest(unittest.TestCase):
 
         xml_doc = xml_utils.parse_untrusted_xml(self.aec_1_xml_bytes)
 
-        aec_xml = parse_aec_xml_data(xml_doc)
+        aec_xml = parse_aec_xml(xml_doc)
 
         self.assertEqual(aec_xml, expected_output)
 
-    def test_parse_aec_xml_data_ok_2(self) -> None:
-        expected_output = AecXmlData(
+    def test_parse_aec_xml_ok_2(self) -> None:
+        expected_output = AecXml(
             dte=DteXmlData(
                 emisor_rut=Rut('76399752-9'),
                 tipo_dte=TipoDteEnum.FACTURA_ELECTRONICA,
@@ -203,10 +241,12 @@ class FunctionsTest(unittest.TestCase):
             cesionario_rut=Rut('76389992-6'),
             fecha_firma_dt=tz_utils.convert_naive_dt_to_tz_aware(
                 dt=datetime(2019, 4, 4, 9, 9, 52),
-                tz=AecXmlData.DATETIME_FIELDS_TZ,
+                tz=AecXml.DATETIME_FIELDS_TZ,
             ),
+            signature_value=None,  # TODO
+            signature_x509_cert_der=None,  # TODO
             cesiones=[
-                AecXmlCesionData(
+                CesionAecXml(
                     dte=DteDataL1(
                         emisor_rut=Rut('76399752-9'),
                         tipo_dte=TipoDteEnum.FACTURA_ELECTRONICA,
@@ -221,7 +261,7 @@ class FunctionsTest(unittest.TestCase):
                     monto_cesion=230992,
                     fecha_cesion_dt=tz_utils.convert_naive_dt_to_tz_aware(
                         dt=datetime(2019, 4, 4, 9, 9, 52),
-                        tz=AecXmlCesionData.DATETIME_FIELDS_TZ,
+                        tz=CesionAecXml.DATETIME_FIELDS_TZ,
                     ),
                     fecha_ultimo_vencimiento=date(2019, 4, 28),
                     cedente_razon_social='COMERCIALIZADORA INNOVA MOBEL SPA',
@@ -248,6 +288,6 @@ class FunctionsTest(unittest.TestCase):
 
         xml_doc = xml_utils.parse_untrusted_xml(self.aec_2_xml_bytes)
 
-        aec_xml = parse_aec_xml_data(xml_doc)
+        aec_xml = parse_aec_xml(xml_doc)
 
         self.assertEqual(aec_xml, expected_output)

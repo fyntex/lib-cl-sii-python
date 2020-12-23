@@ -12,7 +12,7 @@ from cl_sii.libs import tz_utils
 from cl_sii.rut import Rut
 
 from . import data_models
-from .constants import TIPO_DTE_CEDIBLES
+from .constants import CESION_MONTO_CEDIDO_FIELD_MIN_VALUE, TIPO_DTE_CEDIBLES
 
 
 logger = logging.getLogger(__name__)
@@ -107,13 +107,17 @@ class CesionesPeriodoEntry:
     Email address of the "deudor".
     """
 
-    # TODO: verify to what we are referring to exactly:
-    #   digitally signed? received by the SII? processed by the SII?
     fecha_cesion_dt: datetime
     """
     Datetime on which the "cesion" happened.
 
     Must be consistent with ``fecha_cesion`` (considering timezone).
+
+    .. note:: This is the timestamp of when the "cesión"'s AEC was digitally
+        signed, but truncated to the minute (AEC's timestamp has seconds,
+        this one only has minutes).
+
+    ..seealso:: Docstring of :attr:`data_models.CesionL0.fecha_cesion_dt`.
     """
 
     fecha_cesion: date
@@ -227,9 +231,10 @@ class CesionesPeriodoEntry:
 
         if not isinstance(self.monto_cedido, int):
             raise TypeError("Inappropriate type of 'monto_cedido'.")
-        if not self.monto_cedido >= 0:
+        if not self.monto_cedido >= CESION_MONTO_CEDIDO_FIELD_MIN_VALUE:
             raise ValueError(
-                "Amount 'monto_cedido' must be >= 0.", self.monto_cedido)
+                f"Amount 'monto_cedido' must be >= {CESION_MONTO_CEDIDO_FIELD_MIN_VALUE}.",
+                self.monto_cedido)
         data_models.validate_cesion_and_dte_montos(
             cesion_value=self.monto_cedido,
             dte_value=self.dte_monto_total,
@@ -274,9 +279,6 @@ class CesionesPeriodoEntry:
         return dte_data
 
     def as_cesion_l2(self) -> data_models.CesionL2:
-        # TODO: Verify that 'CesionesPeriodoEntry.fecha_cesion_dt' and 'CesionL2.fecha_cesion_dt'
-        #  refer to the same timestamp.
-
         dte = self.as_dte_data_l1()
 
         return data_models.CesionL2(
